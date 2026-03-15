@@ -17,17 +17,20 @@ public class DynamicUAVRouting : ModuleRules
 			"ChaosVehicles",
 			"PhysicsCore",
 			"UMG",
-			"Slate"
+			"Slate",
+			"ProceduralMeshComponent"
 		});
 
 		PublicIncludePaths.AddRange(new string[] {
 			"DynamicUAVRouting",
 			"DynamicUAVRouting/SportsCar",
 			"DynamicUAVRouting/OffroadCar",
-			"DynamicUAVRouting/Variant_Offroad",
+			"DynamicUAVRouting/Drone",
+            "DynamicUAVRouting/Terrain",
+            "DynamicUAVRouting/Variant_Offroad",
 			"DynamicUAVRouting/Variant_TimeTrial",
 			"DynamicUAVRouting/Variant_TimeTrial/UI"
-		});
+        });
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });
 
