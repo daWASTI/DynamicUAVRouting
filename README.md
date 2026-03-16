@@ -1,4 +1,4 @@
-## Dynamic UAV Routing - Simulating navigation through unknown and dynamic terrain
+## Simulating navigation through unknown and dynamic terrain in UE5 C++
 This project is meant as a personal portfolio project and as sandbox for simulating different technical aspects of UAV navigation, such as:
 - simulated LIDAR
 - real-time mesh generation for navigation
