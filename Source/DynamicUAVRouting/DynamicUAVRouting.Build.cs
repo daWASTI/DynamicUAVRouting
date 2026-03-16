@@ -18,8 +18,9 @@ public class DynamicUAVRouting : ModuleRules
 			"PhysicsCore",
 			"UMG",
 			"Slate",
-			"ProceduralMeshComponent"
-		});
+			"ProceduralMeshComponent",
+            "Niagara"
+        });
 
 		PublicIncludePaths.AddRange(new string[] {
 			"DynamicUAVRouting",

@@ -39,6 +39,9 @@ ULidarComponent::ULidarComponent()
         FLinearColor(1.f, 1.f, 0.f),   // Yellow
         FLinearColor(1.f, 0.f, 0.f)    // Red
     };
+
+    // Initialize optional ISMComponent if needed
+    ISMComponent = nullptr;
 }
 
 void ULidarComponent::BeginPlay()
@@ -49,7 +52,6 @@ void ULidarComponent::BeginPlay()
 TArray<FVector> ULidarComponent::LIDARSnapshot()
 {
     TArray<FVector> Points;
-
     if (!GetOwner())
         return Points;
 
@@ -71,14 +73,14 @@ TArray<FVector> ULidarComponent::LIDARSnapshot()
         FVector End = Origin + Direction * MaxDistance;
 
         FHitResult Hit;
-        if (GetWorld()->LineTraceSingleByChannel(Hit, Origin, End, ECC_Visibility))
+        if (GetWorld()->LineTraceSingleByChannel(Hit, Origin, End, LidarTraceChannel))
         {
             Points.Add(Hit.Location);
 
             if (bDrawDebug)
             {
-                // Live hits: gray, temporary
-                DrawDebugPoint(GetWorld(), Hit.Location, 5.f, FColor(128, 128, 128), false, 1.f);
+                // Temporary gray debug point for live hits (2 seconds)
+                DrawDebugPoint(GetWorld(), Hit.Location, 5.f, FColor::White, false, 2.f);
             }
         }
     }
@@ -93,18 +95,18 @@ void ULidarComponent::LIDARAggregate(const TArray<FVector>& Points)
 
     for (const FVector& P : Points)
     {
-        // Store exact hit location in cumulative array
+        // Store hit
         AggregatedPoints.Add(P);
 
-        // Draw permanent debug at exact hit location with gradient color
         if (bDrawDebug)
         {
-            FLinearColor ColorLinear = GetColorForHeight(P.Z, GradientColors, GradientHeights);
-            FColor Color = ColorLinear.ToFColor(true);
-            DrawDebugPoint(GetWorld(), P, 6.f, Color, true); // scattered permanent point
+            // Temporary gradient-colored point
+            FLinearColor LinearColor = GetColorForHeight(P.Z, GradientColors, GradientHeights);
+            FColor Color = LinearColor.ToFColor(true);
+            DrawDebugPoint(GetWorld(), P, 6.f, Color, false, DebugPointLifetime);
         }
 
-        // Update grid-based heightmap for terrain
+        // Update heightmap grid
         FIntPoint GridKey(
             FMath::FloorToInt(P.X / GridSize),
             FMath::FloorToInt(P.Y / GridSize)
