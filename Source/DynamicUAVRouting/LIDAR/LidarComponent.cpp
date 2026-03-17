@@ -39,9 +39,6 @@ ULidarComponent::ULidarComponent()
         FLinearColor(1.f, 1.f, 0.f),   // Yellow
         FLinearColor(1.f, 0.f, 0.f)    // Red
     };
-
-    // Initialize optional ISMComponent if needed
-    ISMComponent = nullptr;
 }
 
 void ULidarComponent::BeginPlay()
@@ -79,47 +76,12 @@ TArray<FVector> ULidarComponent::LIDARSnapshot()
 
             if (bDrawDebug)
             {
-                // Temporary gray debug point for live hits (2 seconds)
-                DrawDebugPoint(GetWorld(), Hit.Location, 5.f, FColor::White, false, 2.f);
+                FLinearColor LinearColor = GetColorForHeight(Hit.ImpactPoint.Z, GradientColors, GradientHeights);
+                FColor Color = LinearColor.ToFColor(true);
+                DrawDebugPoint(GetWorld(), Hit.Location, 5.f, Color, false, DebugPointLifetime);
             }
         }
     }
 
     return Points;
-}
-
-void ULidarComponent::LIDARAggregate(const TArray<FVector>& Points)
-{
-    if (Points.Num() == 0)
-        return;
-
-    for (const FVector& P : Points)
-    {
-        // Store hit
-        AggregatedPoints.Add(P);
-
-        if (bDrawDebug)
-        {
-            // Temporary gradient-colored point
-            FLinearColor LinearColor = GetColorForHeight(P.Z, GradientColors, GradientHeights);
-            FColor Color = LinearColor.ToFColor(true);
-            DrawDebugPoint(GetWorld(), P, 6.f, Color, false, DebugPointLifetime);
-        }
-
-        // Update heightmap grid
-        FIntPoint GridKey(
-            FMath::FloorToInt(P.X / GridSize),
-            FMath::FloorToInt(P.Y / GridSize)
-        );
-
-        float* ExistingHeight = HeightMap.Find(GridKey);
-        if (ExistingHeight)
-        {
-            *ExistingHeight = FMath::Max(*ExistingHeight, P.Z);
-        }
-        else
-        {
-            HeightMap.Add(GridKey, P.Z);
-        }
-    }
 }

@@ -2,7 +2,6 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
-#include "Components/InstancedStaticMeshComponent.h"
 #include "LidarComponent.generated.h"
 
 UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
@@ -37,28 +36,13 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Lidar|Gradient")
     TArray<float> GradientHeights;
 
-    // Instanced Static Mesh for permanent points
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Lidar|ISM")
-    UInstancedStaticMeshComponent* ISMComponent;
-
     // LIDAR functions
     UFUNCTION(BlueprintCallable, Category="Lidar")
     TArray<FVector> LIDARSnapshot();
 
-    UFUNCTION(BlueprintCallable, Category="Lidar")
-    void LIDARAggregate(const TArray<FVector>& Points);
-
-    // Aggregated terrain map (grid)
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Lidar")
-    TMap<FIntPoint, float> HeightMap;
-
-    // Cumulative array of all aggregated hits
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category="Lidar")
-    TArray<FVector> AggregatedPoints;
-
     // Trace channel for LIDAR; editable in the editor
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar|Trace")
-    TEnumAsByte<ECollisionChannel> LidarTraceChannel = ECC_Visibility; // default fallback
+    TEnumAsByte<ECollisionChannel> LidarTraceChannel = ECC_GameTraceChannel1; // default fallback
 
     // Lifetime of debug points in seconds
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar|Debug")
