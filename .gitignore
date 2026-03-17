@@ -22,3 +22,6 @@ Build/
 # OS
 .DS_Store
 Thumbs.db
+
+#Demo Content
+Content/MAEOakForest/
