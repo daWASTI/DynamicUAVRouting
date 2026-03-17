@@ -10,6 +10,7 @@
 /**
  * LidarProcessor
  * GPU point cloud using Niagara + ProceduralMeshComponent for full mesh visualization.
+ * Optimized: smooths only around updated points.
  */
 UCLASS()
 class DYNAMICUAVROUTING_API ALidarProcessor : public AActor
@@ -31,15 +32,15 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Lidar")
     UNiagaraComponent* NiagaraComp;
 
-    /** Procedural mesh for aggregated points */
+    /** Procedural mesh */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Lidar|Mesh")
     UProceduralMeshComponent* ProcMeshComp;
 
-    /** Cumulative points on CPU */
+    /** Cumulative smoothed points for Niagara */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Lidar")
     TArray<FVector> AggregatedPoints;
 
-    /** Step size in world units for subdivision */
+    /** Step size in world units */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar")
     float StepSize = 100.f;
 
@@ -50,7 +51,14 @@ public:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lidar|Mesh", meta = (ExposeOnSpawn = "true"))
     float PlaneLength = 5000.f;
 
-    /** Add new LIDAR points (sends only new points to Niagara) */
+    /** Smoothing parameters */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lidar|Mesh", meta = (ExposeOnSpawn = "true"))
+    float SmoothStrength = 0.5f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lidar|Mesh", meta = (ExposeOnSpawn = "true"))
+    int32 SmoothRadius = 1;
+
+    /** Add new points */
     UFUNCTION(BlueprintCallable, Category = "Lidar")
     void AddPoints(const TArray<FVector>& NewPoints);
 
@@ -59,19 +67,27 @@ public:
     void ClearPoints();
 
 protected:
-    /** Preallocated vertex array for procedural mesh */
+    /** All procedural mesh vertices */
     TArray<FVector> Vertices;
+
+    /** Raw vertex Z positions for smoothing */
+    TArray<FVector> RawVerts;
 
     /** Triangles for procedural mesh */
     TArray<int32> Triangles;
 
-    /** Map grid cell to vertex index for fast snapping */
+    /** Map grid coordinate to vertex index */
     TMap<FIntPoint, int32> GridVertexMap;
 
-    /** World-space step between vertices (computed dynamically) */
-    float StepX;
-    float StepY;
+    /** Computed step for X/Y to match PlaneWidth/PlaneLength */
+    float StepX, StepY;
 
-    /** Initialize the procedural mesh plane with subdivisions */
+    /** Initialize procedural mesh plane */
     void InitializeProcMeshGrid();
+
+    /** Update mesh section */
+    void UpdateProcMeshSection();
+
+    /** Apply smoothing locally around updated vertices */
+    void SmoothVertices(const TSet<int32>& UpdatedVertices);
 };
