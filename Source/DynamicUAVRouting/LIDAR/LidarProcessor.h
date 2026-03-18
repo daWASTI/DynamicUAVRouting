@@ -5,6 +5,7 @@
 #include "ProceduralMeshComponent.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
+#include "Materials/MaterialInterface.h"
 #include "LidarProcessor.generated.h"
 
 /**
@@ -27,6 +28,10 @@ public:
     /** Niagara system asset */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar")
     UNiagaraSystem* NiagaraSystemAsset;
+
+    /** Material for procedural mesh */
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lidar|Mesh", meta = (ExposeOnSpawn = "true"))
+    UMaterialInterface* ProcMeshMaterial;
 
     /** Spawned Niagara component */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Lidar")

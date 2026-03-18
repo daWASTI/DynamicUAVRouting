@@ -10,7 +10,7 @@ ALidarProcessor::ALidarProcessor()
 
     // Niagara system
     static ConstructorHelpers::FObjectFinder<UNiagaraSystem> NiagaraSystemObj(
-        TEXT("/Game/Core/VFX/LidarVisualization/NS_LidarPointCloud.NS_LidarPointCloud")
+        TEXT("/Game/Core/VFX/LidarVisualization/Niagara/NS_LidarPointCloud.NS_LidarPointCloud")
     );
     if (NiagaraSystemObj.Succeeded())
     {
@@ -66,7 +66,6 @@ void ALidarProcessor::InitializeProcMeshGrid()
             RawVerts.Add(V);
             GridVertexMap.Add(FIntPoint(x, y), Vertices.Num() - 1);
 
-            // Plane triangles
             if (x < NumX - 1 && y < NumY - 1)
             {
                 int32 I0 = y * NumX + x;
@@ -84,6 +83,12 @@ void ALidarProcessor::InitializeProcMeshGrid()
     for (int32 i = 0; i < Vertices.Num(); i++) Normals[i] = FVector::UpVector;
 
     ProcMeshComp->CreateMeshSection(0, Vertices, Triangles, Normals, UVs, TArray<FColor>(), Tangents, false);
+
+    // Apply material if assigned
+    if (ProcMeshMaterial)
+    {
+        ProcMeshComp->SetMaterial(0, ProcMeshMaterial);
+    }
 }
 
 void ALidarProcessor::AddPoints(const TArray<FVector>& NewPoints)
@@ -93,7 +98,6 @@ void ALidarProcessor::AddPoints(const TArray<FVector>& NewPoints)
     TArray<FVector> SnappedNewPoints;
     TSet<int32> UpdatedVertexIndices;
 
-    // Snap points to grid and update RawVerts
     for (const FVector& P : NewPoints)
     {
         int32 GridX = FMath::Clamp(FMath::FloorToInt(P.X / StepX), 0, FMath::FloorToInt(PlaneWidth / StepX));
@@ -106,7 +110,6 @@ void ALidarProcessor::AddPoints(const TArray<FVector>& NewPoints)
             RawVerts[*VertexIndex].Z = P.Z;
             UpdatedVertexIndices.Add(*VertexIndex);
 
-            // Snapped for Niagara
             SnappedNewPoints.Add(FVector(GridX * StepX, GridY * StepY, P.Z));
         }
     }
@@ -115,17 +118,14 @@ void ALidarProcessor::AddPoints(const TArray<FVector>& NewPoints)
 
     AggregatedPoints.Append(SnappedNewPoints);
 
-    // Smooth only updated vertices + neighbors
     SmoothVertices(UpdatedVertexIndices);
 
-    // Update Niagara
     UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(
         NiagaraComp,
         FName("PointPositions"),
         SnappedNewPoints
     );
 
-    // Update procedural mesh
     UpdateProcMeshSection();
 }
 
@@ -138,7 +138,6 @@ void ALidarProcessor::SmoothVertices(const TSet<int32>& UpdatedVertices)
 
     for (int32 Index : UpdatedVertices)
     {
-        // compute grid coords
         int32 x = Index % NumX;
         int32 y = Index / NumX;
 
@@ -155,7 +154,6 @@ void ALidarProcessor::SmoothVertices(const TSet<int32>& UpdatedVertices)
                 float SumZ = 0.f;
                 int32 Count = 0;
 
-                // compute neighbor average
                 for (int32 ny = FMath::Max(0, iy - SmoothRadius); ny <= FMath::Min(NumY - 1, iy + SmoothRadius); ny++)
                 {
                     for (int32 nx = FMath::Max(0, ix - SmoothRadius); nx <= FMath::Min(NumX - 1, ix + SmoothRadius); nx++)
