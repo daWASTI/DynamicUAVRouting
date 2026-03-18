@@ -2,6 +2,8 @@
 #include "Async/AsyncWork.h"
 #include "Async/Async.h"
 #include "Kismet/KismetMathLibrary.h"
+#include "Data/PCGPointData.h"
+#include "PCGPoint.h"
 
 // -------------------- Worker Task --------------------
 class FGenerateTerrainTask : public FNonAbandonableTask
@@ -125,20 +127,45 @@ void UTerrainGeneratorComponent::GenerateTerrainAsync()
     bool bLocalAddRiver = bAddRiver;
     float LocalRiverDepth = RiverDepth;
 
-    // Run worker async
-    (new FAutoDeleteAsyncTask<FGenerateTerrainTask>(
-        LocalSizeX, LocalSizeY, LocalNoiseFreq, LocalMaxHeight,
-        LocalSeed, bLocalAddRiver, LocalRiverDepth))
-        ->StartBackgroundTask();
+    TWeakObjectPtr<UTerrainGeneratorComponent> WeakThis(this);
 
-    // Dispatch the mesh update to main thread **after worker completes**
-    Async(EAsyncExecution::TaskGraphMainThread, [this, LocalSizeX, LocalSizeY, LocalNoiseFreq, LocalMaxHeight, LocalSeed, bLocalAddRiver, LocalRiverDepth]()
+    // Run async worker thread
+    Async(EAsyncExecution::Thread, [WeakThis, LocalSizeX, LocalSizeY, LocalNoiseFreq, LocalMaxHeight, LocalSeed, bLocalAddRiver, LocalRiverDepth]()
         {
-            // This lambda now generates the terrain with the captured seed
-            // Broadcast arrays to Blueprint
-            FGenerateTerrainTask Worker(LocalSizeX, LocalSizeY, LocalNoiseFreq, LocalMaxHeight,
-                LocalSeed, bLocalAddRiver, LocalRiverDepth);
+            // Generate terrain
+            FGenerateTerrainTask Worker(LocalSizeX, LocalSizeY, LocalNoiseFreq, LocalMaxHeight, LocalSeed, bLocalAddRiver, LocalRiverDepth);
             Worker.DoWork();
-            OnTerrainGenerated.Broadcast(Worker.Vertices, Worker.Triangles, Worker.Normals, Worker.UVs);
+
+            // Switch to main thread for UObject & delegate
+            Async(EAsyncExecution::TaskGraphMainThread, [WeakThis, Worker = MoveTemp(Worker)]() mutable
+                {
+                    if (!WeakThis.IsValid())
+                        return;
+
+                    UTerrainGeneratorComponent* Comp = WeakThis.Get();
+
+                    // --- On main thread ---
+                    UPCGPointData* PointData = NewObject<UPCGPointData>(Comp, NAME_None, RF_Transient);
+                    TArray<FPCGPoint>& MutablePoints = PointData->GetMutablePoints();
+                    MutablePoints.Empty(Worker.Vertices.Num());
+
+                    for (int32 i = 0; i < Worker.Vertices.Num(); ++i)
+                    {
+                        FPCGPoint Pt;
+                        Pt.Transform.SetLocation(Worker.Vertices[i]);
+                        Pt.Transform.SetScale3D(FVector(1.f));
+                        Pt.Transform.SetRotation(FQuat::Identity);
+                        MutablePoints.Emplace(MoveTemp(Pt));
+                    }
+
+                    // --- Broadcast arrays + PCG points ---
+                    Comp->OnTerrainGenerated.Broadcast(
+                        Worker.Vertices,
+                        Worker.Triangles,
+                        Worker.Normals,
+                        Worker.UVs,
+                        PointData
+                    );
+                });
         });
 }

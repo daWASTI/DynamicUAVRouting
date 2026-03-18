@@ -1,36 +1,31 @@
 #include "LidarProcessor.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraDataInterfaceArrayFunctionLibrary.h"
-#include "Engine/World.h"
 #include "UObject/ConstructorHelpers.h"
 
 ALidarProcessor::ALidarProcessor()
 {
     PrimaryActorTick.bCanEverTick = false;
 
-    // Niagara system
-    static ConstructorHelpers::FObjectFinder<UNiagaraSystem> NiagaraSystemObj(
+    ProcMeshComp = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProcMesh"));
+    RootComponent = ProcMeshComp;
+
+    ProcMeshComp->bUseAsyncCooking = true;
+    ProcMeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+
+    static ConstructorHelpers::FObjectFinder<UNiagaraSystem> NiagaraObj(
         TEXT("/Game/Core/VFX/LidarVisualization/Niagara/NS_LidarPointCloud.NS_LidarPointCloud")
     );
-    if (NiagaraSystemObj.Succeeded())
+    if (NiagaraObj.Succeeded())
     {
-        NiagaraSystemAsset = NiagaraSystemObj.Object;
+        NiagaraSystemAsset = NiagaraObj.Object;
     }
-
-    // Procedural mesh
-    ProcMeshComp = CreateDefaultSubobject<UProceduralMeshComponent>(TEXT("ProcMeshComp"));
-    ProcMeshComp->SetupAttachment(RootComponent);
-    ProcMeshComp->bUseAsyncCooking = true;
-
-    ProcMeshComp->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-    ProcMeshComp->SetCollisionResponseToAllChannels(ECR_Ignore);
 }
 
 void ALidarProcessor::BeginPlay()
 {
     Super::BeginPlay();
 
-    // Spawn Niagara system
     if (NiagaraSystemAsset)
     {
         NiagaraComp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
@@ -51,8 +46,8 @@ void ALidarProcessor::InitializeProcMeshGrid()
     Triangles.Empty();
     GridVertexMap.Empty();
 
-    int32 NumX = FMath::Max(2, FMath::CeilToInt(PlaneWidth / StepSize) + 1);
-    int32 NumY = FMath::Max(2, FMath::CeilToInt(PlaneLength / StepSize) + 1);
+    int32 NumX = FMath::CeilToInt(PlaneWidth / StepSize) + 1;
+    int32 NumY = FMath::CeilToInt(PlaneLength / StepSize) + 1;
 
     StepX = PlaneWidth / (NumX - 1);
     StepY = PlaneLength / (NumY - 1);
@@ -69,22 +64,20 @@ void ALidarProcessor::InitializeProcMeshGrid()
             if (x < NumX - 1 && y < NumY - 1)
             {
                 int32 I0 = y * NumX + x;
-                int32 I1 = y * NumX + (x + 1);
-                int32 I2 = (y + 1) * NumX + x;
-                int32 I3 = (y + 1) * NumX + (x + 1);
+                int32 I1 = I0 + 1;
+                int32 I2 = I0 + NumX;
+                int32 I3 = I2 + 1;
                 Triangles.Append({ I0, I2, I1, I1, I2, I3 });
             }
         }
     }
 
-    TArray<FVector> Normals; Normals.SetNum(Vertices.Num());
-    TArray<FVector2D> UVs; UVs.SetNum(Vertices.Num());
-    TArray<FProcMeshTangent> Tangents; Tangents.SetNum(Vertices.Num());
-    for (int32 i = 0; i < Vertices.Num(); i++) Normals[i] = FVector::UpVector;
+    TArray<FVector> Normals; Normals.Init(FVector::UpVector, Vertices.Num());
+    TArray<FVector2D> UVs; UVs.Init(FVector2D::ZeroVector, Vertices.Num());
+    TArray<FProcMeshTangent> Tangents; Tangents.Init(FProcMeshTangent(), Vertices.Num());
 
-    ProcMeshComp->CreateMeshSection(0, Vertices, Triangles, Normals, UVs, TArray<FColor>(), Tangents, false);
+    ProcMeshComp->CreateMeshSection(0, Vertices, Triangles, Normals, UVs, {}, Tangents, false);
 
-    // Apply material if assigned
     if (ProcMeshMaterial)
     {
         ProcMeshComp->SetMaterial(0, ProcMeshMaterial);
@@ -95,35 +88,34 @@ void ALidarProcessor::AddPoints(const TArray<FVector>& NewPoints)
 {
     if (!NiagaraComp || NewPoints.Num() == 0) return;
 
-    TArray<FVector> SnappedNewPoints;
-    TSet<int32> UpdatedVertexIndices;
+    TArray<FVector> SnappedPoints;
+    TSet<int32> UpdatedVertices;
 
     for (const FVector& P : NewPoints)
     {
-        int32 GridX = FMath::Clamp(FMath::FloorToInt(P.X / StepX), 0, FMath::FloorToInt(PlaneWidth / StepX));
-        int32 GridY = FMath::Clamp(FMath::FloorToInt(P.Y / StepY), 0, FMath::FloorToInt(PlaneLength / StepY));
+        int32 GX = FMath::Clamp(FMath::FloorToInt(P.X / StepX), 0, FMath::FloorToInt(PlaneWidth / StepX));
+        int32 GY = FMath::Clamp(FMath::FloorToInt(P.Y / StepY), 0, FMath::FloorToInt(PlaneLength / StepY));
 
-        FIntPoint Key(GridX, GridY);
-        int32* VertexIndex = GridVertexMap.Find(Key);
-        if (VertexIndex)
-        {
-            RawVerts[*VertexIndex].Z = P.Z;
-            UpdatedVertexIndices.Add(*VertexIndex);
+        FIntPoint Key(GX, GY);
+        int32* Idx = GridVertexMap.Find(Key);
+        if (!Idx) continue;
 
-            SnappedNewPoints.Add(FVector(GridX * StepX, GridY * StepY, P.Z));
-        }
+        RawVerts[*Idx].Z = P.Z;
+        UpdatedVertices.Add(*Idx);
+
+        SnappedPoints.Add(FVector(GX * StepX, GY * StepY, P.Z));
     }
 
-    if (SnappedNewPoints.Num() == 0) return;
+    if (SnappedPoints.Num() == 0) return;
 
-    AggregatedPoints.Append(SnappedNewPoints);
+    AggregatedPoints.Append(SnappedPoints);
 
-    SmoothVertices(UpdatedVertexIndices);
+    SmoothVertices(UpdatedVertices);
 
     UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(
         NiagaraComp,
-        FName("PointPositions"),
-        SnappedNewPoints
+        "PointPositions",
+        SnappedPoints
     );
 
     UpdateProcMeshSection();
@@ -136,10 +128,10 @@ void ALidarProcessor::SmoothVertices(const TSet<int32>& UpdatedVertices)
     int32 NumX = FMath::CeilToInt(PlaneWidth / StepX) + 1;
     int32 NumY = FMath::CeilToInt(PlaneLength / StepY) + 1;
 
-    for (int32 Index : UpdatedVertices)
+    for (int32 Idx : UpdatedVertices)
     {
-        int32 x = Index % NumX;
-        int32 y = Index / NumX;
+        int32 x = Idx % NumX;
+        int32 y = Idx / NumX;
 
         int32 MinX = FMath::Max(0, x - SmoothRadius);
         int32 MaxX = FMath::Min(NumX - 1, x + SmoothRadius);
@@ -150,7 +142,7 @@ void ALidarProcessor::SmoothVertices(const TSet<int32>& UpdatedVertices)
         {
             for (int32 ix = MinX; ix <= MaxX; ix++)
             {
-                int32 NeighborIndex = iy * NumX + ix;
+                int32 I = iy * NumX + ix;
                 float SumZ = 0.f;
                 int32 Count = 0;
 
@@ -158,14 +150,13 @@ void ALidarProcessor::SmoothVertices(const TSet<int32>& UpdatedVertices)
                 {
                     for (int32 nx = FMath::Max(0, ix - SmoothRadius); nx <= FMath::Min(NumX - 1, ix + SmoothRadius); nx++)
                     {
-                        int32 NIndex = ny * NumX + nx;
-                        SumZ += RawVerts[NIndex].Z;
+                        SumZ += RawVerts[ny * NumX + nx].Z;
                         Count++;
                     }
                 }
 
                 float AvgZ = SumZ / Count;
-                Vertices[NeighborIndex].Z = FMath::Lerp(Vertices[NeighborIndex].Z, AvgZ, SmoothStrength);
+                Vertices[I].Z = FMath::Lerp(Vertices[I].Z, AvgZ, SmoothStrength);
             }
         }
     }
@@ -173,24 +164,16 @@ void ALidarProcessor::SmoothVertices(const TSet<int32>& UpdatedVertices)
 
 void ALidarProcessor::UpdateProcMeshSection()
 {
-    if (!ProcMeshComp) return;
-
-    ProcMeshComp->UpdateMeshSection(0, Vertices, TArray<FVector>(), TArray<FVector2D>(), TArray<FColor>(), TArray<FProcMeshTangent>());
+    ProcMeshComp->UpdateMeshSection(0, Vertices, {}, {}, {}, {});
 }
 
 void ALidarProcessor::ClearPoints()
 {
     AggregatedPoints.Empty();
-
-    if (NiagaraComp)
-    {
-        TArray<FVector> EmptyArray;
-        UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(
-            NiagaraComp,
-            FName("PointPositions"),
-            EmptyArray
-        );
-    }
+    GridVertexMap.Empty();
+    Vertices.Empty();
+    RawVerts.Empty();
+    Triangles.Empty();
 
     if (ProcMeshComp)
     {

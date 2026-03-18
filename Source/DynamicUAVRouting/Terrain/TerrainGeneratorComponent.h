@@ -4,11 +4,14 @@
 #include "Components/ActorComponent.h"
 #include "TerrainGeneratorComponent.generated.h"
 
-DECLARE_DYNAMIC_MULTICAST_DELEGATE_FourParams(FOnTerrainGenerated,
+class UPCGPointData;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_FiveParams(FOnTerrainGenerated,
     const TArray<FVector>&, Vertices,
     const TArray<int32>&, Triangles,
     const TArray<FVector>&, Normals,
-    const TArray<FVector2D>&, UVs);
+    const TArray<FVector2D>&, UVs,
+    UPCGPointData*, PointData);
 
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class DYNAMICUAVROUTING_API UTerrainGeneratorComponent : public UActorComponent

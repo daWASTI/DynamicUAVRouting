@@ -8,11 +8,6 @@
 #include "Materials/MaterialInterface.h"
 #include "LidarProcessor.generated.h"
 
-/**
- * LidarProcessor
- * GPU point cloud using Niagara + ProceduralMeshComponent for full mesh visualization.
- * Optimized: smooths only around updated points.
- */
 UCLASS()
 class DYNAMICUAVROUTING_API ALidarProcessor : public AActor
 {
@@ -25,15 +20,15 @@ protected:
     virtual void BeginPlay() override;
 
 public:
-    /** Niagara system asset */
+    /** Niagara system */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar")
     UNiagaraSystem* NiagaraSystemAsset;
 
-    /** Material for procedural mesh */
+    /** Procedural mesh material */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lidar|Mesh", meta = (ExposeOnSpawn = "true"))
     UMaterialInterface* ProcMeshMaterial;
 
-    /** Spawned Niagara component */
+    /** Niagara component */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Lidar")
     UNiagaraComponent* NiagaraComp;
 
@@ -41,22 +36,22 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Lidar|Mesh")
     UProceduralMeshComponent* ProcMeshComp;
 
-    /** Cumulative smoothed points for Niagara */
+    /** Aggregated points for Niagara */
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Lidar")
     TArray<FVector> AggregatedPoints;
 
-    /** Step size in world units */
+    /** Grid resolution */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar")
     float StepSize = 100.f;
 
-    /** Plane dimensions in world units - set at spawn */
+    /** Plane dimensions */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lidar|Mesh", meta = (ExposeOnSpawn = "true"))
     float PlaneWidth = 5000.f;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lidar|Mesh", meta = (ExposeOnSpawn = "true"))
     float PlaneLength = 5000.f;
 
-    /** Smoothing parameters */
+    /** Smoothing */
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lidar|Mesh", meta = (ExposeOnSpawn = "true"))
     float SmoothStrength = 0.5f;
 
@@ -64,35 +59,31 @@ public:
     int32 SmoothRadius = 1;
 
     /** Add new points */
-    UFUNCTION(BlueprintCallable, Category = "Lidar")
+    UFUNCTION(BlueprintCallable)
     void AddPoints(const TArray<FVector>& NewPoints);
 
     /** Clear all points */
-    UFUNCTION(BlueprintCallable, Category = "Lidar")
+    UFUNCTION(BlueprintCallable)
     void ClearPoints();
 
 protected:
-    /** All procedural mesh vertices */
+    /** Mesh data */
     TArray<FVector> Vertices;
-
-    /** Raw vertex Z positions for smoothing */
     TArray<FVector> RawVerts;
-
-    /** Triangles for procedural mesh */
     TArray<int32> Triangles;
 
-    /** Map grid coordinate to vertex index */
+    /** Grid mapping */
     TMap<FIntPoint, int32> GridVertexMap;
 
-    /** Computed step for X/Y to match PlaneWidth/PlaneLength */
+    /** Grid spacing */
     float StepX, StepY;
 
-    /** Initialize procedural mesh plane */
+    /** Init procedural mesh */
     void InitializeProcMeshGrid();
 
     /** Update mesh section */
     void UpdateProcMeshSection();
 
-    /** Apply smoothing locally around updated vertices */
+    /** Smooth only around updated vertices */
     void SmoothVertices(const TSet<int32>& UpdatedVertices);
 };
