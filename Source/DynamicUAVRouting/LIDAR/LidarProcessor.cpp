@@ -44,13 +44,17 @@ void ALidarProcessor::InitializeProcMeshGrid()
     Vertices.Empty();
     RawVerts.Empty();
     Triangles.Empty();
-    GridVertexMap.Empty();
 
     int32 NumX = FMath::CeilToInt(PlaneWidth / StepSize) + 1;
     int32 NumY = FMath::CeilToInt(PlaneLength / StepSize) + 1;
 
     StepX = PlaneWidth / (NumX - 1);
     StepY = PlaneLength / (NumY - 1);
+
+    int32 TotalVerts = NumX * NumY;
+
+    Vertices.Reserve(TotalVerts);
+    RawVerts.Reserve(TotalVerts);
 
     for (int32 y = 0; y < NumY; y++)
     {
@@ -59,7 +63,6 @@ void ALidarProcessor::InitializeProcMeshGrid()
             FVector V(x * StepX, y * StepY, 0.f);
             Vertices.Add(V);
             RawVerts.Add(V);
-            GridVertexMap.Add(FIntPoint(x, y), Vertices.Num() - 1);
 
             if (x < NumX - 1 && y < NumY - 1)
             {
@@ -88,27 +91,39 @@ void ALidarProcessor::AddPoints(const TArray<FVector>& NewPoints)
 {
     if (!NiagaraComp || NewPoints.Num() == 0) return;
 
+    int32 NumX = FMath::CeilToInt(PlaneWidth / StepX) + 1;
+    int32 NumY = FMath::CeilToInt(PlaneLength / StepY) + 1;
+
     TArray<FVector> SnappedPoints;
-    TSet<int32> UpdatedVertices;
+    SnappedPoints.Reserve(NewPoints.Num());
+
+    TArray<int32> UpdatedVertices;
+    UpdatedVertices.Reserve(NewPoints.Num());
+
+    TArray<bool> Touched;
+    Touched.Init(false, RawVerts.Num());
 
     for (const FVector& P : NewPoints)
     {
-        int32 GX = FMath::Clamp(FMath::FloorToInt(P.X / StepX), 0, FMath::FloorToInt(PlaneWidth / StepX));
-        int32 GY = FMath::Clamp(FMath::FloorToInt(P.Y / StepY), 0, FMath::FloorToInt(PlaneLength / StepY));
+        int32 GX = FMath::Clamp(FMath::FloorToInt(P.X / StepX), 0, NumX - 1);
+        int32 GY = FMath::Clamp(FMath::FloorToInt(P.Y / StepY), 0, NumY - 1);
 
-        FIntPoint Key(GX, GY);
-        int32* Idx = GridVertexMap.Find(Key);
-        if (!Idx) continue;
+        int32 Idx = GY * NumX + GX;
 
-        RawVerts[*Idx].Z = P.Z;
-        UpdatedVertices.Add(*Idx);
+        if (!RawVerts.IsValidIndex(Idx)) continue;
+
+        RawVerts[Idx].Z = P.Z;
+
+        if (!Touched[Idx])
+        {
+            Touched[Idx] = true;
+            UpdatedVertices.Add(Idx);
+        }
 
         SnappedPoints.Add(FVector(GX * StepX, GY * StepY, P.Z));
     }
 
-    if (SnappedPoints.Num() == 0) return;
-
-    AggregatedPoints.Append(SnappedPoints);
+    if (UpdatedVertices.Num() == 0) return;
 
     SmoothVertices(UpdatedVertices);
 
@@ -121,7 +136,7 @@ void ALidarProcessor::AddPoints(const TArray<FVector>& NewPoints)
     UpdateProcMeshSection();
 }
 
-void ALidarProcessor::SmoothVertices(const TSet<int32>& UpdatedVertices)
+void ALidarProcessor::SmoothVertices(const TArray<int32>& UpdatedVertices)
 {
     if (UpdatedVertices.Num() == 0) return;
 
@@ -143,6 +158,7 @@ void ALidarProcessor::SmoothVertices(const TSet<int32>& UpdatedVertices)
             for (int32 ix = MinX; ix <= MaxX; ix++)
             {
                 int32 I = iy * NumX + ix;
+
                 float SumZ = 0.f;
                 int32 Count = 0;
 
@@ -169,8 +185,6 @@ void ALidarProcessor::UpdateProcMeshSection()
 
 void ALidarProcessor::ClearPoints()
 {
-    AggregatedPoints.Empty();
-    GridVertexMap.Empty();
     Vertices.Empty();
     RawVerts.Empty();
     Triangles.Empty();

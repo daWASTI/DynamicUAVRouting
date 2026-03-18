@@ -36,10 +36,6 @@ public:
     UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Lidar|Mesh")
     UProceduralMeshComponent* ProcMeshComp;
 
-    /** Aggregated points for Niagara */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Lidar")
-    TArray<FVector> AggregatedPoints;
-
     /** Grid resolution */
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar")
     float StepSize = 100.f;
@@ -72,9 +68,6 @@ protected:
     TArray<FVector> RawVerts;
     TArray<int32> Triangles;
 
-    /** Grid mapping */
-    TMap<FIntPoint, int32> GridVertexMap;
-
     /** Grid spacing */
     float StepX, StepY;
 
@@ -85,5 +78,5 @@ protected:
     void UpdateProcMeshSection();
 
     /** Smooth only around updated vertices */
-    void SmoothVertices(const TSet<int32>& UpdatedVertices);
+    void SmoothVertices(const TArray<int32>& UpdatedVertices);
 };
