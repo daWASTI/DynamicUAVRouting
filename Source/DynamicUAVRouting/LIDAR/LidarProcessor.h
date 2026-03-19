@@ -2,10 +2,9 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
-#include "ProceduralMeshComponent.h"
-#include "NiagaraComponent.h"
+#include "LidarMeshComponent.h"
 #include "NiagaraSystem.h"
-#include "Materials/MaterialInterface.h"
+#include "NiagaraComponent.h"
 #include "LidarProcessor.generated.h"
 
 UCLASS()
@@ -20,63 +19,53 @@ protected:
     virtual void BeginPlay() override;
 
 public:
-    /** Niagara system */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar")
+    /** LIDAR mesh */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+    ULidarMeshComponent* LidarMeshComp;
+
+    /** Niagara point cloud visualization */
+    UPROPERTY(EditAnywhere, BlueprintReadWrite)
     UNiagaraSystem* NiagaraSystemAsset;
 
-    /** Procedural mesh material */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lidar|Mesh", meta = (ExposeOnSpawn = "true"))
-    UMaterialInterface* ProcMeshMaterial;
-
-    /** Niagara component */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Lidar")
+    UPROPERTY(VisibleAnywhere)
     UNiagaraComponent* NiagaraComp;
 
-    /** Procedural mesh */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Lidar|Mesh")
-    UProceduralMeshComponent* ProcMeshComp;
+    /** Procedural mesh parameters */
+    UPROPERTY(EditAnywhere)
+    UMaterialInterface* ProcMeshMaterial;
 
-    /** Grid resolution */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar")
-    float StepSize = 100.f;
+    UPROPERTY(EditAnywhere)
+    float PlaneWidth = 1000.f;
 
-    /** Plane dimensions */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lidar|Mesh", meta = (ExposeOnSpawn = "true"))
-    float PlaneWidth = 5000.f;
+    UPROPERTY(EditAnywhere)
+    float PlaneLength = 1000.f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lidar|Mesh", meta = (ExposeOnSpawn = "true"))
-    float PlaneLength = 5000.f;
+    UPROPERTY(EditAnywhere)
+    float StepSize = 50.f;
 
-    /** Smoothing */
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lidar|Mesh", meta = (ExposeOnSpawn = "true"))
-    float SmoothStrength = 0.5f;
-
-    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Lidar|Mesh", meta = (ExposeOnSpawn = "true"))
+    UPROPERTY(EditAnywhere)
     int32 SmoothRadius = 1;
 
-    /** Add new points */
-    UFUNCTION(BlueprintCallable)
-    void AddPoints(const TArray<FVector>& NewPoints);
+    UPROPERTY(EditAnywhere)
+    float SmoothStrength = 0.5f;
 
-    /** Clear all points */
-    UFUNCTION(BlueprintCallable)
-    void ClearPoints();
-
-protected:
-    /** Mesh data */
+    /** Internal mesh storage */
     TArray<FVector> Vertices;
     TArray<FVector> RawVerts;
     TArray<int32> Triangles;
 
-    /** Grid spacing */
-    float StepX, StepY;
-
-    /** Init procedural mesh */
+    /** Initialize procedural mesh grid */
     void InitializeProcMeshGrid();
 
-    /** Update mesh section */
+    /** Add LIDAR points (updates mesh + collision + nav) */
+    void AddPoints(const TArray<FVector>& NewPoints);
+
+    /** Smooth mesh vertices */
+    void SmoothVertices(const TArray<int32>& UpdatedVertices);
+
+    /** Update procedural mesh section */
     void UpdateProcMeshSection();
 
-    /** Smooth only around updated vertices */
-    void SmoothVertices(const TArray<int32>& UpdatedVertices);
+    /** Clear mesh */
+    void ClearPoints();
 };

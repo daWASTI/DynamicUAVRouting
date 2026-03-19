@@ -19,8 +19,10 @@ public class DynamicUAVRouting : ModuleRules
 			"UMG",
 			"Slate",
 			"ProceduralMeshComponent",
+			"RealtimeMeshComponent",
             "Niagara",
-			"PCG"
+			"PCG",
+            "NavigationSystem"
         });
 
 		PublicIncludePaths.AddRange(new string[] {
