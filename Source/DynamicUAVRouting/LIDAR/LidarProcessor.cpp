@@ -143,6 +143,10 @@ void ALidarProcessor::SmoothVertices(const TArray<int32>& UpdatedVertices)
     int32 NumX = FMath::CeilToInt(PlaneWidth / StepX) + 1;
     int32 NumY = FMath::CeilToInt(PlaneLength / StepY) + 1;
 
+    // Deduplicate + expand affected region
+    TSet<int32> AffectedVertices;
+    AffectedVertices.Reserve(UpdatedVertices.Num() * (SmoothRadius * 4 + 1));
+
     for (int32 Idx : UpdatedVertices)
     {
         int32 x = Idx % NumX;
@@ -157,24 +161,39 @@ void ALidarProcessor::SmoothVertices(const TArray<int32>& UpdatedVertices)
         {
             for (int32 ix = MinX; ix <= MaxX; ix++)
             {
-                int32 I = iy * NumX + ix;
-
-                float SumZ = 0.f;
-                int32 Count = 0;
-
-                for (int32 ny = FMath::Max(0, iy - SmoothRadius); ny <= FMath::Min(NumY - 1, iy + SmoothRadius); ny++)
-                {
-                    for (int32 nx = FMath::Max(0, ix - SmoothRadius); nx <= FMath::Min(NumX - 1, ix + SmoothRadius); nx++)
-                    {
-                        SumZ += RawVerts[ny * NumX + nx].Z;
-                        Count++;
-                    }
-                }
-
-                float AvgZ = SumZ / Count;
-                Vertices[I].Z = FMath::Lerp(Vertices[I].Z, AvgZ, SmoothStrength);
+                AffectedVertices.Add(iy * NumX + ix);
             }
         }
+    }
+
+    // Smooth each affected vertex ONCE
+    for (int32 I : AffectedVertices)
+    {
+        int32 x = I % NumX;
+        int32 y = I / NumX;
+
+        float SumZ = 0.f;
+        float WeightSum = 0.f;
+
+        for (int32 ny = FMath::Max(0, y - SmoothRadius); ny <= FMath::Min(NumY - 1, y + SmoothRadius); ny++)
+        {
+            for (int32 nx = FMath::Max(0, x - SmoothRadius); nx <= FMath::Min(NumX - 1, x + SmoothRadius); nx++)
+            {
+                int32 NeighborIdx = ny * NumX + nx;
+
+                // Distance-based weight (smoother result)
+                float Dist = FVector2D(nx - x, ny - y).Size();
+                float Weight = 1.f / (1.f + Dist); // simple falloff
+
+                SumZ += RawVerts[NeighborIdx].Z * Weight;
+                WeightSum += Weight;
+            }
+        }
+
+        float AvgZ = SumZ / WeightSum;
+
+        // Blend toward smoothed value
+        Vertices[I].Z = FMath::Lerp(Vertices[I].Z, AvgZ, SmoothStrength);
     }
 }
 
