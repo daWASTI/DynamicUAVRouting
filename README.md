@@ -27,3 +27,6 @@ Disclosure: I'm using UE5's "Vehicle" project preset for the car setup.
 - Feed LIDAR data into mesh generation
 - Use UE5's built-in navigation for the vehicle based on the LIDAR mesh and use that to steer on the real terrain
 - Measure autonomous driving performance vs human driver in a little racing game mode
+
+# Plugins
+- RealtimeMeshComponent: https://github.com/TriAxis-Games/RealtimeMeshComponent
