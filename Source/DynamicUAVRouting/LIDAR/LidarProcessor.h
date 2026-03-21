@@ -20,52 +20,62 @@ protected:
 
 public:
     /** LIDAR mesh */
-    UPROPERTY(VisibleAnywhere, BlueprintReadOnly)
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Lidar")
     ULidarMeshComponent* LidarMeshComp;
 
     /** Niagara point cloud visualization */
-    UPROPERTY(EditAnywhere, BlueprintReadWrite)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar", meta = (ExposeOnSpawn = true))
     UNiagaraSystem* NiagaraSystemAsset;
 
-    UPROPERTY(VisibleAnywhere)
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Lidar")
     UNiagaraComponent* NiagaraComp;
 
     /** Procedural mesh parameters */
-    UPROPERTY(EditAnywhere)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mesh", meta = (ExposeOnSpawn = true))
     UMaterialInterface* ProcMeshMaterial;
 
-    UPROPERTY(EditAnywhere)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mesh", meta = (ExposeOnSpawn = true))
     float PlaneWidth = 1000.f;
 
-    UPROPERTY(EditAnywhere)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mesh", meta = (ExposeOnSpawn = true))
     float PlaneLength = 1000.f;
 
-    UPROPERTY(EditAnywhere)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mesh", meta = (ExposeOnSpawn = true))
     float StepSize = 50.f;
 
-    UPROPERTY(EditAnywhere)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mesh", meta = (ExposeOnSpawn = true))
     int32 SmoothRadius = 1;
 
-    UPROPERTY(EditAnywhere)
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Mesh", meta = (ExposeOnSpawn = true))
     float SmoothStrength = 0.5f;
 
     /** Internal mesh storage */
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mesh")
     TArray<FVector> Vertices;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mesh")
     TArray<FVector> RawVerts;
+
+    UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Mesh")
     TArray<int32> Triangles;
 
     /** Initialize procedural mesh grid */
+    UFUNCTION(BlueprintCallable, Category = "Mesh")
     void InitializeProcMeshGrid();
 
     /** Add LIDAR points (updates mesh + collision + nav) */
+    UFUNCTION(BlueprintCallable, Category = "Mesh")
     void AddPoints(const TArray<FVector>& NewPoints);
 
     /** Smooth mesh vertices */
+    UFUNCTION(BlueprintCallable, Category = "Mesh")
     void SmoothVertices(const TArray<int32>& UpdatedVertices);
 
     /** Update procedural mesh section */
+    UFUNCTION(BlueprintCallable, Category = "Mesh")
     void UpdateProcMeshSection();
 
     /** Clear mesh */
+    UFUNCTION(BlueprintCallable, Category = "Mesh")
     void ClearPoints();
 };

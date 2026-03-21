@@ -7,7 +7,7 @@ ULidarMeshComponent::ULidarMeshComponent(const FObjectInitializer& ObjectInitial
     bUseAsyncCooking = true;
 
     // Collision setup
-    SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    SetCollisionEnabled(ECollisionEnabled::NoCollision);
     SetCollisionObjectType(ECC_WorldStatic);
     SetCollisionResponseToAllChannels(ECR_Block);
     SetCollisionResponseToChannel(ECC_Pawn, ECR_Ignore); // Ignore vehicles

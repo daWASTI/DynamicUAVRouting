@@ -80,9 +80,6 @@ void ALidarProcessor::InitializeProcMeshGrid()
     {
         LidarMeshComp->SetMaterial(0, ProcMeshMaterial);
     }
-
-    // Update collision & nav
-    LidarMeshComp->RebuildCollisionAndNav();
 }
 
 void ALidarProcessor::AddPoints(const TArray<FVector>& NewPoints)
@@ -128,9 +125,6 @@ void ALidarProcessor::AddPoints(const TArray<FVector>& NewPoints)
     UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(NiagaraComp, TEXT("PointPositions"), SnappedPoints);
 
     UpdateProcMeshSection();
-
-    // Rebuild collision & nav
-    LidarMeshComp->RebuildCollisionAndNav();
 }
 
 void ALidarProcessor::SmoothVertices(const TArray<int32>& UpdatedVertices)
