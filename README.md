@@ -1,4 +1,4 @@
-# UGV Navigation in Unknown Terrain (Unreal Engine 5, C++)
+# UGV Navigation in Unknown Terrain (UE5, C++)
 
 This project is a portfolio-focused simulation of an unmanned ground vehicle (UGV) navigating unknown and dynamic terrain, supported by aerial sensing concepts.
 
