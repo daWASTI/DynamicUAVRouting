@@ -1,32 +1,70 @@
-## Simulating navigation through unknown and dynamic terrain in UE5 C++
-This project is meant as a personal portfolio project and as sandbox for simulating different technical aspects of UAV navigation, such as:
-- simulated LIDAR
-- real-time mesh generation for navigation
-- navigation updates according to dynamic events
-- sensor fusion
+# UGV Navigation in Unknown Terrain (Unreal Engine 5, C++)
 
-I'm using Blueprints for rapid iteration and prototyping, while C++ is used for performance-critical systems such as LIDAR processing and navigation logic.
+This project is a portfolio-focused simulation of an unmanned ground vehicle (UGV) navigating unknown and dynamic terrain, supported by aerial sensing concepts.
 
-Disclosure: I'm using UE5's "Vehicle" project preset for the car setup.
+The goal is to explore and demonstrate core systems relevant to autonomous navigation, including real-time perception, environment reconstruction, and multi-sensor integration, implemented in Unreal Engine 5 using C++ and Blueprints.
 
+---
+
+## Project Overview
+
+The simulation focuses on how a vehicle can perceive and adapt to an environment that is:
+- procedurally generated  
+- partially unknown  
+- dynamically changing at runtime  
+
+To address this, the project implements a modular sensing pipeline combining simulated LIDAR and vision-inspired classification, which can be fused into a unified representation of the environment.
+
+Blueprints are used for fast prototyping and iteration, while performance-critical systems such as LIDAR processing and navigation logic are implemented in C++.
+
+Note: The vehicle setup is based on Unreal Engine 5’s Vehicle template.
+
+---
+
+## Demonstration
+
+**LIDAR sampling and point cloud visualization**  
 ![LIDAR](https://github.com/user-attachments/assets/6390f5d0-ce32-4831-b232-a400784ccdb8)
 
-# Current Features
-- LIDAR simulation
-- Setup for Procedural Terrain and LIDAR mesh generation using ProceduralMeshComponent
+**Real-time mesh reconstruction from sensor data**  
+![LIDAR_Mesh](https://github.com/user-attachments/assets/28983fbd-9973-4820-aa92-0e25b4e7eca2)
 
-# Planned Features
-- Full PCG environment
-- Destruction events and VFX
-- Real-time camera capture that can be fed into ML image recognition
-- Predictive drone paths for ideal LIDAR mapping
-- Adaptive vehicle steering over mapped terrain
+**Shader-based simulation of ML object classification**
 
-# Next Steps
-- Optimize point cloud visualization using Niagara Data Channels
-- Feed LIDAR data into mesh generation
-- Use UE5's built-in navigation for the vehicle based on the LIDAR mesh and use that to steer on the real terrain
-- Measure autonomous driving performance vs human driver in a little racing game mode
+---
 
-# Plugins
-- RealtimeMeshComponent: https://github.com/TriAxis-Games/RealtimeMeshComponent
+## Current Features
+
+- LIDAR simulation using raycast-based environment sampling  
+- Real-time point cloud generation and processing (C++)  
+- Runtime mesh reconstruction using ProceduralMeshComponent / RealtimeMeshComponent  
+- Procedural terrain setup for dynamic, non-deterministic environments  
+- Shader-based vision simulation using Custom Stencil with noise (ML approximation)  
+- Modular sensor fusion pipeline (in progress)  
+- Hybrid Blueprint/C++ architecture for rapid iteration and performance-critical systems  
+
+---
+
+## Planned Features
+
+- Full PCG-based environment generation  
+- Destruction events and dynamic obstacles  
+- Real-time camera capture for ML-based image recognition  
+- Predictive drone paths for optimized environment scanning  
+- Adaptive vehicle steering based on reconstructed terrain  
+
+---
+
+## Next Steps
+
+- Optimize point cloud visualization using Niagara Data Channels  
+- Integrate LIDAR data fully into mesh generation pipeline  
+- Use UE5 navigation systems on reconstructed meshes for autonomous driving
+- Benchmark autonomous navigation against human driving (game mode scenario)
+
+---
+
+## Plugins
+
+- RealtimeMeshComponent  
+  https://github.com/TriAxis-Games/RealtimeMeshComponent  
