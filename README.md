@@ -29,7 +29,8 @@ Note: The vehicle setup is based on Unreal Engine 5’s Vehicle template.
 **Real-time mesh reconstruction from sensor data**  
 ![LIDAR_Mesh](https://github.com/user-attachments/assets/28983fbd-9973-4820-aa92-0e25b4e7eca2)
 
-**Shader-based simulation of ML object classification**
+**Shader-based approximation of ML object classification**
+![VisionML](https://github.com/user-attachments/assets/5bd0f7c8-140e-448c-bc31-eb4215bef517)
 
 ---
 
