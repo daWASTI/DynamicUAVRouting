@@ -1,10 +1,12 @@
 #pragma once
-
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Engine/World.h"
 #include "LidarComponent.generated.h"
 
-UCLASS(ClassGroup=(Custom), meta=(BlueprintSpawnableComponent))
+class ALidarProcessor;
+
+UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class DYNAMICUAVROUTING_API ULidarComponent : public UActorComponent
 {
     GENERATED_BODY()
@@ -14,37 +16,51 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 public:
-
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Lidar")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar")
     int32 NumRays = 1000;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Lidar")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar")
     float MaxDistance = 5000.f;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Lidar")
-    float GridSize = 100.f;
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar")
+    TEnumAsByte<ECollisionChannel> LidarTraceChannel = ECC_GameTraceChannel1;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Lidar")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar|Debug")
     bool bDrawDebug = true;
 
-    // Gradient control: colors and corresponding absolute heights
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Lidar|Gradient")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar|Debug")
+    float DebugPointLifetime = 60.f;
+
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar|Gradient")
     TArray<FLinearColor> GradientColors;
 
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category="Lidar|Gradient")
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar|Gradient")
     TArray<float> GradientHeights;
 
-    // LIDAR functions
-    UFUNCTION(BlueprintCallable, Category="Lidar")
-    TArray<FVector> LIDARSnapshot();
+    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar")
+    ALidarProcessor* LidarProcessor = nullptr;
 
-    // Trace channel for LIDAR; editable in the editor
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar|Trace")
-    TEnumAsByte<ECollisionChannel> LidarTraceChannel = ECC_GameTraceChannel1; // default fallback
+    // --- Public functions ---
+    UFUNCTION(BlueprintCallable, Category = "Lidar")
+    void FireLidarScan();
 
-    // Lifetime of debug points in seconds
-    UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar|Debug")
-    float DebugPointLifetime = 60.f; // default 60 seconds
+    // Called when all traces in a batch complete
+    void OnTraceBatchComplete(const TArray<FVector>& FramePoints);
+
+    // Tick polling for trace results
+    void ProcessPendingTraces();
+
+private:
+    struct FPendingTrace
+    {
+        TArray<FTraceHandle> Handles;
+        TArray<FVector> Hits;
+    };
+
+    TArray<FPendingTrace> PendingTraces;
+
+    FLinearColor GetColorForHeight(float Z) const;
 };

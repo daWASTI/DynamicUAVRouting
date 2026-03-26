@@ -1,44 +1,14 @@
 #include "LidarComponent.h"
+#include "LidarProcessor.h"
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
-#include "Math/UnrealMathUtility.h"
-
-// Interpolate color gradient based on absolute world Z
-static FLinearColor GetColorForHeight(float Z, const TArray<FLinearColor>& Colors, const TArray<float>& Heights)
-{
-    int32 NumStops = FMath::Min(Colors.Num(), Heights.Num());
-    if (NumStops == 0)
-        return FLinearColor::White;
-
-    if (Z <= Heights[0])
-        return Colors[0];
-    if (Z >= Heights[NumStops - 1])
-        return Colors[NumStops - 1];
-
-    for (int32 i = 0; i < NumStops - 1; i++)
-    {
-        if (Z >= Heights[i] && Z <= Heights[i + 1])
-        {
-            float Alpha = (Z - Heights[i]) / (Heights[i + 1] - Heights[i]);
-            return FLinearColor::LerpUsingHSV(Colors[i], Colors[i + 1], Alpha);
-        }
-    }
-
-    return Colors[NumStops - 1];
-}
 
 ULidarComponent::ULidarComponent()
 {
-    PrimaryComponentTick.bCanEverTick = false;
+    PrimaryComponentTick.bCanEverTick = true;
 
-    // Default gradient
     GradientHeights = { 0.f, 500.f, 1000.f, 2000.f };
-    GradientColors = {
-        FLinearColor(0.f, 0.f, 1.f),   // Blue
-        FLinearColor(0.f, 1.f, 0.f),   // Green
-        FLinearColor(1.f, 1.f, 0.f),   // Yellow
-        FLinearColor(1.f, 0.f, 0.f)    // Red
-    };
+    GradientColors = { FLinearColor::Blue, FLinearColor::Green, FLinearColor::Yellow, FLinearColor::Red };
 }
 
 void ULidarComponent::BeginPlay()
@@ -46,42 +16,125 @@ void ULidarComponent::BeginPlay()
     Super::BeginPlay();
 }
 
-TArray<FVector> ULidarComponent::LIDARSnapshot()
+void ULidarComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
-    TArray<FVector> Points;
-    if (!GetOwner())
-        return Points;
+    Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
-    FVector Origin = GetOwner()->GetActorLocation();
-    FRotator Rotation = GetOwner()->GetActorRotation();
+    ProcessPendingTraces();
+}
 
-    for (int32 i = 0; i < NumRays; i++)
+FLinearColor ULidarComponent::GetColorForHeight(float Z) const
+{
+    const int32 NumStops = FMath::Min(GradientColors.Num(), GradientHeights.Num());
+    if (NumStops == 0) return FLinearColor::White;
+
+    if (Z <= GradientHeights[0]) return GradientColors[0];
+    if (Z >= GradientHeights[NumStops - 1]) return GradientColors[NumStops - 1];
+
+    for (int32 i = 0; i < NumStops - 1; i++)
     {
-        float Theta = FMath::FRandRange(0.f, PI / 2.f);
-        float Phi = FMath::FRandRange(0.f, 2.f * PI);
+        if (Z >= GradientHeights[i] && Z <= GradientHeights[i + 1])
+        {
+            const float Alpha = (Z - GradientHeights[i]) / (GradientHeights[i + 1] - GradientHeights[i]);
+            return FLinearColor::LerpUsingHSV(GradientColors[i], GradientColors[i + 1], Alpha);
+        }
+    }
+
+    return GradientColors[NumStops - 1];
+}
+
+void ULidarComponent::FireLidarScan()
+{
+    UWorld* World = GetWorld();
+    AActor* Owner = GetOwner();
+    if (!World || !Owner) return;
+
+    FPendingTrace PendingTrace;
+    PendingTrace.Handles.Reserve(NumRays);
+    PendingTrace.Hits.Reserve(NumRays);
+
+    const FVector Origin = Owner->GetActorLocation();
+    const FRotator Rot = Owner->GetActorRotation();
+
+    for (int32 i = 0; i < NumRays; ++i)
+    {
+        const float Theta = FMath::FRandRange(0.f, PI / 2.f);
+        const float Phi = FMath::FRandRange(0.f, 2.f * PI);
 
         FVector Direction(
             FMath::Sin(Theta) * FMath::Cos(Phi),
             FMath::Sin(Theta) * FMath::Sin(Phi),
-            -FMath::Cos(Theta)
-        );
+            -FMath::Cos(Theta));
+        Direction = Rot.RotateVector(Direction);
 
-        Direction = Rotation.RotateVector(Direction);
-        FVector End = Origin + Direction * MaxDistance;
+        FCollisionQueryParams Params;
+        Params.bReturnPhysicalMaterial = false;
 
-        FHitResult Hit;
-        if (GetWorld()->LineTraceSingleByChannel(Hit, Origin, End, LidarTraceChannel))
-        {
-            Points.Add(Hit.Location);
-
-            if (bDrawDebug)
-            {
-                FLinearColor LinearColor = GetColorForHeight(Hit.ImpactPoint.Z, GradientColors, GradientHeights);
-                FColor Color = LinearColor.ToFColor(true);
-                DrawDebugPoint(GetWorld(), Hit.Location, 5.f, Color, false, DebugPointLifetime);
-            }
-        }
+        PendingTrace.Handles.Add(World->AsyncLineTraceByChannel(
+            EAsyncTraceType::Single,
+            Origin,
+            Origin + Direction * MaxDistance,
+            LidarTraceChannel,
+            Params,
+            FCollisionResponseParams::DefaultResponseParam));
     }
 
-    return Points;
+    PendingTraces.Add(MoveTemp(PendingTrace));
+}
+
+void ULidarComponent::ProcessPendingTraces()
+{
+    UWorld* World = GetWorld();
+    if (!World) return;
+
+    for (int32 TraceIndex = PendingTraces.Num() - 1; TraceIndex >= 0; --TraceIndex)
+    {
+        FPendingTrace& Trace = PendingTraces[TraceIndex];
+
+        for (int32 HandleIndex = Trace.Handles.Num() - 1; HandleIndex >= 0; --HandleIndex)
+        {
+            FTraceDatum TraceData;
+            if (!World->QueryTraceData(Trace.Handles[HandleIndex], TraceData))
+            {
+                continue;
+            }
+
+            for (const FHitResult& Hit : TraceData.OutHits)
+            {
+                if (!Hit.bBlockingHit)
+                {
+                    continue;
+                }
+
+                Trace.Hits.Add(Hit.ImpactPoint);
+
+                if (bDrawDebug)
+                {
+                    const FColor Color = GetColorForHeight(Hit.ImpactPoint.Z).ToFColor(true);
+                    DrawDebugPoint(World, Hit.ImpactPoint, 5.f, Color, false, DebugPointLifetime);
+                }
+            }
+
+            Trace.Handles.RemoveAtSwap(HandleIndex);
+        }
+
+        if (Trace.Handles.Num() == 0)
+        {
+            OnTraceBatchComplete(Trace.Hits);
+            PendingTraces.RemoveAt(TraceIndex);
+        }
+    }
+}
+
+void ULidarComponent::OnTraceBatchComplete(const TArray<FVector>& FramePoints)
+{
+    if (FramePoints.Num() == 0)
+    {
+        return;
+    }
+
+    if (LidarProcessor)
+    {
+        LidarProcessor->AddPoints(FramePoints);
+    }
 }

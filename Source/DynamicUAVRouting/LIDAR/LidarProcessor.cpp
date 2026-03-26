@@ -1,4 +1,6 @@
 #include "LidarProcessor.h"
+#include "LidarSmoothingTask.h"
+#include "Async/Async.h"
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraDataInterfaceArrayFunctionLibrary.h"
 #include "NavigationSystem.h"
@@ -84,7 +86,22 @@ void ALidarProcessor::InitializeProcMeshGrid()
 
 void ALidarProcessor::AddPoints(const TArray<FVector>& NewPoints)
 {
-    if (!NiagaraComp || NewPoints.Num() == 0) return;
+    if (NewPoints.Num() == 0) return;
+
+    BufferedPointUpdates.Append(NewPoints);
+
+    if (!bSmoothingTaskRunning)
+    {
+        StartBufferedSmoothingTask();
+    }
+}
+
+void ALidarProcessor::StartBufferedSmoothingTask()
+{
+    if (BufferedPointUpdates.Num() == 0)
+    {
+        return;
+    }
 
     int32 NumX = FMath::CeilToInt(PlaneWidth / StepSize) + 1;
     int32 NumY = FMath::CeilToInt(PlaneLength / StepSize) + 1;
@@ -92,87 +109,98 @@ void ALidarProcessor::AddPoints(const TArray<FVector>& NewPoints)
     float StepX = PlaneWidth / (NumX - 1);
     float StepY = PlaneLength / (NumY - 1);
 
-    TArray<FVector> SnappedPoints;
-    SnappedPoints.Reserve(NewPoints.Num());
+    TArray<FVector> PendingPoints = MoveTemp(BufferedPointUpdates);
+    BufferedPointUpdates.Reset();
 
-    TArray<int32> UpdatedVertices;
-    UpdatedVertices.Reserve(NewPoints.Num());
+    TMap<int32, FVector> LatestPointByVertex;
+    LatestPointByVertex.Reserve(PendingPoints.Num());
 
-    TArray<bool> Touched;
-    Touched.Init(false, RawVerts.Num());
-
-    for (const FVector& P : NewPoints)
+    for (const FVector& P : PendingPoints)
     {
         int32 GX = FMath::Clamp(FMath::FloorToInt(P.X / StepX), 0, NumX - 1);
         int32 GY = FMath::Clamp(FMath::FloorToInt(P.Y / StepY), 0, NumY - 1);
         int32 Idx = GY * NumX + GX;
         if (!RawVerts.IsValidIndex(Idx)) continue;
 
-        RawVerts[Idx].Z = P.Z;
-        if (!Touched[Idx])
+        LatestPointByVertex.Add(Idx, FVector(GX * StepX, GY * StepY, P.Z));
+    }
+
+    if (LatestPointByVertex.Num() == 0)
+    {
+        return;
+    }
+
+    TArray<FVector> SnappedPoints;
+    SnappedPoints.Reserve(LatestPointByVertex.Num());
+
+    TArray<int32> UpdatedVertices;
+    UpdatedVertices.Reserve(LatestPointByVertex.Num());
+
+    for (const TPair<int32, FVector>& VertexPointPair : LatestPointByVertex)
+    {
+        const int32 Idx = VertexPointPair.Key;
+        const FVector& SnappedPoint = VertexPointPair.Value;
+
+        if (!RawVerts.IsValidIndex(Idx))
         {
-            Touched[Idx] = true;
-            UpdatedVertices.Add(Idx);
+            continue;
         }
 
-        SnappedPoints.Add(FVector(GX * StepX, GY * StepY, P.Z));
+        RawVerts[Idx].Z = SnappedPoint.Z;
+        UpdatedVertices.Add(Idx);
+        SnappedPoints.Add(SnappedPoint);
     }
 
     if (UpdatedVertices.Num() == 0) return;
 
-    SmoothVertices(UpdatedVertices);
+    const TArray<FVector> BaseVerticesSnapshot = Vertices;
+    const TArray<FVector> RawVertsSnapshot = RawVerts;
+    TArray<FVector> SnappedPointsSnapshot = MoveTemp(SnappedPoints);
+    TArray<int32> UpdatedVerticesSnapshot = MoveTemp(UpdatedVertices);
+    const int32 SnapshotNumX = NumX;
+    const int32 SnapshotNumY = NumY;
+    const int32 SnapshotSmoothRadius = SmoothRadius;
+    const float SnapshotSmoothStrength = SmoothStrength;
+    bSmoothingTaskRunning = true;
 
-    UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(NiagaraComp, TEXT("PointPositions"), SnappedPoints);
-
-    UpdateProcMeshSection();
-}
-
-void ALidarProcessor::SmoothVertices(const TArray<int32>& UpdatedVertices)
-{
-    if (UpdatedVertices.Num() == 0) return;
-
-    int32 NumX = FMath::CeilToInt(PlaneWidth / StepSize) + 1;
-    int32 NumY = FMath::CeilToInt(PlaneLength / StepSize) + 1;
-
-    TSet<int32> AffectedVertices;
-    AffectedVertices.Reserve(UpdatedVertices.Num() * (SmoothRadius * 4 + 1));
-
-    for (int32 Idx : UpdatedVertices)
-    {
-        int32 x = Idx % NumX;
-        int32 y = Idx / NumX;
-        int32 MinX = FMath::Max(0, x - SmoothRadius);
-        int32 MaxX = FMath::Min(NumX - 1, x + SmoothRadius);
-        int32 MinY = FMath::Max(0, y - SmoothRadius);
-        int32 MaxY = FMath::Min(NumY - 1, y + SmoothRadius);
-
-        for (int32 iy = MinY; iy <= MaxY; iy++)
-            for (int32 ix = MinX; ix <= MaxX; ix++)
-                AffectedVertices.Add(iy * NumX + ix);
-    }
-
-    for (int32 I : AffectedVertices)
-    {
-        int32 x = I % NumX;
-        int32 y = I / NumX;
-
-        float SumZ = 0.f;
-        float WeightSum = 0.f;
-
-        for (int32 ny = FMath::Max(0, y - SmoothRadius); ny <= FMath::Min(NumY - 1, y + SmoothRadius); ny++)
+    FOnLidarSmoothingComplete CompletionDelegate;
+    CompletionDelegate.BindWeakLambda(
+        this,
+        [this](const TArray<FVector>& SmoothedVertices, const TArray<FVector>& InSnappedPoints, const TArray<int32>& InUpdatedVertices)
         {
-            for (int32 nx = FMath::Max(0, x - SmoothRadius); nx <= FMath::Min(NumX - 1, x + SmoothRadius); nx++)
-            {
-                int32 NeighborIdx = ny * NumX + nx;
-                float Dist = FVector2D(nx - x, ny - y).Size();
-                float Weight = 1.f / (1.f + Dist);
-                SumZ += RawVerts[NeighborIdx].Z * Weight;
-                WeightSum += Weight;
-            }
-        }
+            HandleSmoothingComplete(SmoothedVertices, InSnappedPoints, InUpdatedVertices);
+        });
 
-        Vertices[I].Z = FMath::Lerp(Vertices[I].Z, SumZ / WeightSum, SmoothStrength);
-    }
+    Async(EAsyncExecution::ThreadPool,
+        [BaseVerticesSnapshot,
+         RawVertsSnapshot,
+         SnappedPointsSnapshot,
+         UpdatedVerticesSnapshot,
+         SnapshotNumX,
+         SnapshotNumY,
+         SnapshotSmoothRadius,
+         SnapshotSmoothStrength,
+         CompletionDelegate = MoveTemp(CompletionDelegate)]() mutable
+        {
+            FLidarSmoothingTask SmoothingTask(
+                BaseVerticesSnapshot,
+                RawVertsSnapshot,
+                UpdatedVerticesSnapshot,
+                SnapshotNumX,
+                SnapshotNumY,
+                SnapshotSmoothRadius,
+                SnapshotSmoothStrength);
+            SmoothingTask.DoWork();
+
+            AsyncTask(ENamedThreads::GameThread,
+                [CompletionDelegate = MoveTemp(CompletionDelegate),
+                 SmoothedVertices = MoveTemp(SmoothingTask.OutputVertices),
+                 SnappedPoints = MoveTemp(SnappedPointsSnapshot),
+                 UpdatedVertices = MoveTemp(UpdatedVerticesSnapshot)]() mutable
+                {
+                    CompletionDelegate.ExecuteIfBound(SmoothedVertices, SnappedPoints, UpdatedVertices);
+                });
+        });
 }
 
 void ALidarProcessor::UpdateProcMeshSection()
@@ -190,5 +218,64 @@ void ALidarProcessor::ClearPoints()
     {
         LidarMeshComp->ClearAllMeshSections();
         InitializeProcMeshGrid();
+    }
+}
+
+void ALidarProcessor::HandleSmoothingComplete(const TArray<FVector>& SmoothedVertices, const TArray<FVector>& SnappedPoints, const TArray<int32>& UpdatedVertices)
+{
+    for (int32 UpdatedVertex : UpdatedVertices)
+    {
+        if (Vertices.IsValidIndex(UpdatedVertex) && SmoothedVertices.IsValidIndex(UpdatedVertex))
+        {
+            Vertices[UpdatedVertex] = SmoothedVertices[UpdatedVertex];
+        }
+    }
+
+    const int32 NumX = FMath::CeilToInt(PlaneWidth / StepSize) + 1;
+    const int32 NumY = FMath::CeilToInt(PlaneLength / StepSize) + 1;
+    TSet<int32> AffectedVertices;
+    AffectedVertices.Reserve(UpdatedVertices.Num() * (SmoothRadius * 4 + 1));
+
+    for (int32 Idx : UpdatedVertices)
+    {
+        const int32 x = Idx % NumX;
+        const int32 y = Idx / NumX;
+        const int32 MinX = FMath::Max(0, x - SmoothRadius);
+        const int32 MaxX = FMath::Min(NumX - 1, x + SmoothRadius);
+        const int32 MinY = FMath::Max(0, y - SmoothRadius);
+        const int32 MaxY = FMath::Min(NumY - 1, y + SmoothRadius);
+
+        for (int32 iy = MinY; iy <= MaxY; iy++)
+        {
+            for (int32 ix = MinX; ix <= MaxX; ix++)
+            {
+                const int32 AffectedIndex = iy * NumX + ix;
+                if (Vertices.IsValidIndex(AffectedIndex) && SmoothedVertices.IsValidIndex(AffectedIndex))
+                {
+                    AffectedVertices.Add(AffectedIndex);
+                }
+            }
+        }
+    }
+
+    for (int32 AffectedIndex : AffectedVertices)
+    {
+        Vertices[AffectedIndex] = SmoothedVertices[AffectedIndex];
+    }
+
+    if (NiagaraComp)
+    {
+        UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(
+            NiagaraComp,
+            TEXT("PointPositions"),
+            SnappedPoints);
+    }
+
+    UpdateProcMeshSection();
+    bSmoothingTaskRunning = false;
+
+    if (BufferedPointUpdates.Num() > 0)
+    {
+        StartBufferedSmoothingTask();
     }
 }

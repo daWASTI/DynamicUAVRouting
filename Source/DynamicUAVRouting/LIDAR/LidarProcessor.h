@@ -7,6 +7,8 @@
 #include "NiagaraComponent.h"
 #include "LidarProcessor.generated.h"
 
+DECLARE_DELEGATE_ThreeParams(FOnLidarSmoothingComplete, const TArray<FVector>&, const TArray<FVector>&, const TArray<int32>&);
+
 UCLASS()
 class DYNAMICUAVROUTING_API ALidarProcessor : public AActor
 {
@@ -67,10 +69,6 @@ public:
     UFUNCTION(BlueprintCallable, Category = "Mesh")
     void AddPoints(const TArray<FVector>& NewPoints);
 
-    /** Smooth mesh vertices */
-    UFUNCTION(BlueprintCallable, Category = "Mesh")
-    void SmoothVertices(const TArray<int32>& UpdatedVertices);
-
     /** Update procedural mesh section */
     UFUNCTION(BlueprintCallable, Category = "Mesh")
     void UpdateProcMeshSection();
@@ -78,4 +76,11 @@ public:
     /** Clear mesh */
     UFUNCTION(BlueprintCallable, Category = "Mesh")
     void ClearPoints();
+
+private:
+    void HandleSmoothingComplete(const TArray<FVector>& SmoothedVertices, const TArray<FVector>& SnappedPoints, const TArray<int32>& UpdatedVertices);
+    void StartBufferedSmoothingTask();
+
+    TArray<FVector> BufferedPointUpdates;
+    bool bSmoothingTaskRunning = false;
 };
