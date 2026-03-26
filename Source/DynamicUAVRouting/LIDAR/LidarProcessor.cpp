@@ -124,14 +124,18 @@ void ALidarProcessor::StartBufferedSmoothingTask()
     TMap<int32, FVector> LowestPointByVertex;
     LowestPointByVertex.Reserve(PendingPoints.Num());
 
+    const FTransform MeshTransform = LidarMeshComp ? LidarMeshComp->GetComponentTransform() : FTransform::Identity;
+
     for (const FVector& P : PendingPoints)
     {
-        int32 GX = FMath::Clamp(FMath::FloorToInt(P.X / StepX), 0, NumX - 1);
-        int32 GY = FMath::Clamp(FMath::FloorToInt(P.Y / StepY), 0, NumY - 1);
+        const FVector LocalPoint = MeshTransform.InverseTransformPosition(P);
+
+        int32 GX = FMath::Clamp(FMath::FloorToInt(LocalPoint.X / StepX), 0, NumX - 1);
+        int32 GY = FMath::Clamp(FMath::FloorToInt(LocalPoint.Y / StepY), 0, NumY - 1);
         int32 Idx = GY * NumX + GX;
         if (!RawVerts.IsValidIndex(Idx)) continue;
 
-        const FVector SnappedPoint(GX * StepX, GY * StepY, P.Z);
+        const FVector SnappedPoint(GX * StepX, GY * StepY, LocalPoint.Z);
         if (FVector* ExistingPoint = LowestPointByVertex.Find(Idx))
         {
             if (SnappedPoint.Z < ExistingPoint->Z)
