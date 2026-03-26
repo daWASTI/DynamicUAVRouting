@@ -4,38 +4,34 @@
 #include "NiagaraFunctionLibrary.h"
 #include "NiagaraDataInterfaceArrayFunctionLibrary.h"
 #include "NavigationSystem.h"
-#include "UObject/ConstructorHelpers.h"
 
 ALidarProcessor::ALidarProcessor()
 {
     PrimaryActorTick.bCanEverTick = false;
 
+    GradientHeights = { 0.f, 500.f, 1000.f, 2000.f };
+    GradientColors = { FLinearColor::Blue, FLinearColor::Green, FLinearColor::Yellow, FLinearColor::Red };
+
     // Create LIDAR mesh
     LidarMeshComp = CreateDefaultSubobject<ULidarMeshComponent>(TEXT("LidarMesh"));
     RootComponent = LidarMeshComp;
 
-    // Niagara
-    static ConstructorHelpers::FObjectFinder<UNiagaraSystem> NiagaraObj(
-        TEXT("/Game/Core/VFX/LidarVisualization/Niagara/NS_LidarPointCloud.NS_LidarPointCloud")
-    );
-    if (NiagaraObj.Succeeded())
-    {
-        NiagaraSystemAsset = NiagaraObj.Object;
-    }
 }
 
 void ALidarProcessor::BeginPlay()
 {
     Super::BeginPlay();
 
-    if (NiagaraSystemAsset)
+    if (!NiagaraComp && NiagaraSystemAsset)
     {
-        NiagaraComp = UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-            GetWorld(),
+        NiagaraComp = UNiagaraFunctionLibrary::SpawnSystemAttached(
             NiagaraSystemAsset,
-            GetActorLocation(),
-            FRotator::ZeroRotator
-        );
+            RootComponent,
+            NAME_None,
+            FVector::ZeroVector,
+            FRotator::ZeroRotator,
+            EAttachLocation::KeepRelativeOffset,
+            false);
     }
 
     InitializeProcMeshGrid();
@@ -46,6 +42,8 @@ void ALidarProcessor::InitializeProcMeshGrid()
     Vertices.Empty();
     RawVerts.Empty();
     Triangles.Empty();
+    NiagaraPointPositions.Empty();
+    NiagaraPointColors.Empty();
 
     int32 NumX = FMath::CeilToInt(PlaneWidth / StepSize) + 1;
     int32 NumY = FMath::CeilToInt(PlaneLength / StepSize) + 1;
@@ -82,6 +80,17 @@ void ALidarProcessor::InitializeProcMeshGrid()
     {
         LidarMeshComp->SetMaterial(0, ProcMeshMaterial);
     }
+
+    if (NiagaraComp)
+    {
+        TArray<int32> EmptyIDs;
+        TArray<FVector> EmptyPositions;
+        TArray<FLinearColor> EmptyColors;
+        UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(NiagaraComp, TEXT("PointIDs"), EmptyIDs);
+        UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(NiagaraComp, TEXT("PointPositions"), EmptyPositions);
+        UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayColor(NiagaraComp, TEXT("PointColors"), EmptyColors);
+        NiagaraComp->SetVariableInt(TEXT("PointCount"), 0);
+    }
 }
 
 void ALidarProcessor::AddPoints(const TArray<FVector>& NewPoints)
@@ -112,8 +121,8 @@ void ALidarProcessor::StartBufferedSmoothingTask()
     TArray<FVector> PendingPoints = MoveTemp(BufferedPointUpdates);
     BufferedPointUpdates.Reset();
 
-    TMap<int32, FVector> LatestPointByVertex;
-    LatestPointByVertex.Reserve(PendingPoints.Num());
+    TMap<int32, FVector> LowestPointByVertex;
+    LowestPointByVertex.Reserve(PendingPoints.Num());
 
     for (const FVector& P : PendingPoints)
     {
@@ -122,21 +131,29 @@ void ALidarProcessor::StartBufferedSmoothingTask()
         int32 Idx = GY * NumX + GX;
         if (!RawVerts.IsValidIndex(Idx)) continue;
 
-        LatestPointByVertex.Add(Idx, FVector(GX * StepX, GY * StepY, P.Z));
+        const FVector SnappedPoint(GX * StepX, GY * StepY, P.Z);
+        if (FVector* ExistingPoint = LowestPointByVertex.Find(Idx))
+        {
+            if (SnappedPoint.Z < ExistingPoint->Z)
+            {
+                *ExistingPoint = SnappedPoint;
+            }
+        }
+        else
+        {
+            LowestPointByVertex.Add(Idx, SnappedPoint);
+        }
     }
 
-    if (LatestPointByVertex.Num() == 0)
+    if (LowestPointByVertex.Num() == 0)
     {
         return;
     }
 
-    TArray<FVector> SnappedPoints;
-    SnappedPoints.Reserve(LatestPointByVertex.Num());
-
     TArray<int32> UpdatedVertices;
-    UpdatedVertices.Reserve(LatestPointByVertex.Num());
+    UpdatedVertices.Reserve(LowestPointByVertex.Num());
 
-    for (const TPair<int32, FVector>& VertexPointPair : LatestPointByVertex)
+    for (const TPair<int32, FVector>& VertexPointPair : LowestPointByVertex)
     {
         const int32 Idx = VertexPointPair.Key;
         const FVector& SnappedPoint = VertexPointPair.Value;
@@ -148,14 +165,12 @@ void ALidarProcessor::StartBufferedSmoothingTask()
 
         RawVerts[Idx].Z = SnappedPoint.Z;
         UpdatedVertices.Add(Idx);
-        SnappedPoints.Add(SnappedPoint);
     }
 
     if (UpdatedVertices.Num() == 0) return;
 
     const TArray<FVector> BaseVerticesSnapshot = Vertices;
     const TArray<FVector> RawVertsSnapshot = RawVerts;
-    TArray<FVector> SnappedPointsSnapshot = MoveTemp(SnappedPoints);
     TArray<int32> UpdatedVerticesSnapshot = MoveTemp(UpdatedVertices);
     const int32 SnapshotNumX = NumX;
     const int32 SnapshotNumY = NumY;
@@ -166,15 +181,14 @@ void ALidarProcessor::StartBufferedSmoothingTask()
     FOnLidarSmoothingComplete CompletionDelegate;
     CompletionDelegate.BindWeakLambda(
         this,
-        [this](const TArray<FVector>& SmoothedVertices, const TArray<FVector>& InSnappedPoints, const TArray<int32>& InUpdatedVertices)
+        [this](const TArray<FVector>& SmoothedVertices, const TArray<int32>& InUpdatedVertices)
         {
-            HandleSmoothingComplete(SmoothedVertices, InSnappedPoints, InUpdatedVertices);
+            HandleSmoothingComplete(SmoothedVertices, InUpdatedVertices);
         });
 
     Async(EAsyncExecution::ThreadPool,
         [BaseVerticesSnapshot,
          RawVertsSnapshot,
-         SnappedPointsSnapshot,
          UpdatedVerticesSnapshot,
          SnapshotNumX,
          SnapshotNumY,
@@ -195,10 +209,9 @@ void ALidarProcessor::StartBufferedSmoothingTask()
             AsyncTask(ENamedThreads::GameThread,
                 [CompletionDelegate = MoveTemp(CompletionDelegate),
                  SmoothedVertices = MoveTemp(SmoothingTask.OutputVertices),
-                 SnappedPoints = MoveTemp(SnappedPointsSnapshot),
                  UpdatedVertices = MoveTemp(UpdatedVerticesSnapshot)]() mutable
                 {
-                    CompletionDelegate.ExecuteIfBound(SmoothedVertices, SnappedPoints, UpdatedVertices);
+                    CompletionDelegate.ExecuteIfBound(SmoothedVertices, UpdatedVertices);
                 });
         });
 }
@@ -213,6 +226,8 @@ void ALidarProcessor::ClearPoints()
     Vertices.Empty();
     RawVerts.Empty();
     Triangles.Empty();
+    NiagaraPointPositions.Empty();
+    NiagaraPointColors.Empty();
 
     if (LidarMeshComp)
     {
@@ -221,7 +236,7 @@ void ALidarProcessor::ClearPoints()
     }
 }
 
-void ALidarProcessor::HandleSmoothingComplete(const TArray<FVector>& SmoothedVertices, const TArray<FVector>& SnappedPoints, const TArray<int32>& UpdatedVertices)
+void ALidarProcessor::HandleSmoothingComplete(const TArray<FVector>& SmoothedVertices, const TArray<int32>& UpdatedVertices)
 {
     for (int32 UpdatedVertex : UpdatedVertices)
     {
@@ -263,13 +278,7 @@ void ALidarProcessor::HandleSmoothingComplete(const TArray<FVector>& SmoothedVer
         Vertices[AffectedIndex] = SmoothedVertices[AffectedIndex];
     }
 
-    if (NiagaraComp)
-    {
-        UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(
-            NiagaraComp,
-            TEXT("PointPositions"),
-            SnappedPoints);
-    }
+    UpdateNiagaraPointCloud(AffectedVertices);
 
     UpdateProcMeshSection();
     bSmoothingTaskRunning = false;
@@ -278,4 +287,89 @@ void ALidarProcessor::HandleSmoothingComplete(const TArray<FVector>& SmoothedVer
     {
         StartBufferedSmoothingTask();
     }
+}
+
+void ALidarProcessor::UpdateNiagaraPointCloud(const TSet<int32>& PointIDs)
+{
+    if (!NiagaraComp)
+    {
+        return;
+    }
+
+    for (int32 PointID : PointIDs)
+    {
+        if (!Vertices.IsValidIndex(PointID))
+        {
+            NiagaraPointPositions.Remove(PointID);
+            NiagaraPointColors.Remove(PointID);
+            continue;
+        }
+
+        NiagaraPointPositions.Add(PointID, Vertices[PointID]);
+        NiagaraPointColors.Add(PointID, GetColorForHeight(Vertices[PointID].Z));
+    }
+
+    TArray<int32> NiagaraIDs;
+    NiagaraIDs.Reserve(NiagaraPointPositions.Num());
+    NiagaraPointPositions.GetKeys(NiagaraIDs);
+    NiagaraIDs.Sort();
+
+    TArray<FVector> PointPositions;
+    PointPositions.Reserve(NiagaraIDs.Num());
+
+    TArray<FLinearColor> PointColors;
+    PointColors.Reserve(NiagaraIDs.Num());
+
+    for (int32 NiagaraID : NiagaraIDs)
+    {
+        if (const FVector* Position = NiagaraPointPositions.Find(NiagaraID))
+        {
+            PointPositions.Add(*Position);
+            PointColors.Add(NiagaraPointColors.FindRef(NiagaraID));
+        }
+    }
+
+    UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
+        NiagaraComp,
+        TEXT("PointIDs"),
+        NiagaraIDs);
+    UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayVector(
+        NiagaraComp,
+        TEXT("PointPositions"),
+        PointPositions);
+    UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayColor(
+        NiagaraComp,
+        TEXT("PointColors"),
+        PointColors);
+    NiagaraComp->SetVariableInt(TEXT("PointCount"), NiagaraIDs.Num());
+}
+
+FLinearColor ALidarProcessor::GetColorForHeight(float Z) const
+{
+    const int32 NumStops = FMath::Min(GradientColors.Num(), GradientHeights.Num());
+    if (NumStops == 0)
+    {
+        return FLinearColor::White;
+    }
+
+    if (Z <= GradientHeights[0])
+    {
+        return GradientColors[0];
+    }
+
+    if (Z >= GradientHeights[NumStops - 1])
+    {
+        return GradientColors[NumStops - 1];
+    }
+
+    for (int32 i = 0; i < NumStops - 1; ++i)
+    {
+        if (Z >= GradientHeights[i] && Z <= GradientHeights[i + 1])
+        {
+            const float Alpha = (Z - GradientHeights[i]) / (GradientHeights[i + 1] - GradientHeights[i]);
+            return FLinearColor::LerpUsingHSV(GradientColors[i], GradientColors[i + 1], Alpha);
+        }
+    }
+
+    return GradientColors[NumStops - 1];
 }
