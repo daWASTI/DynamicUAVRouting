@@ -6,6 +6,7 @@
 
 class ALidarProcessor;
 
+/** Coordinates asynchronous LIDAR tracing and forwards completed hit frames to the processor. */
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class DYNAMICUAVROUTING_API ULidarComponent : public UActorComponent
 {
@@ -15,7 +16,9 @@ public:
     ULidarComponent();
 
 protected:
+    /** Initializes component runtime state after the owning actor enters play. */
     virtual void BeginPlay() override;
+    /** Polls outstanding async trace batches and completes finished scans. */
     virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 public:
@@ -29,7 +32,7 @@ public:
     TEnumAsByte<ECollisionChannel> LidarTraceChannel = ECC_GameTraceChannel1;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar|Debug")
-    bool bDrawDebug = true;
+    bool bDrawDebug = false;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar|Debug")
     float DebugPointLifetime = 60.f;
@@ -41,16 +44,17 @@ public:
     TArray<float> GradientHeights;
 
     UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lidar")
-    ALidarProcessor* LidarProcessor = nullptr;
+    TObjectPtr<ALidarProcessor> LidarProcessor = nullptr;
 
     // --- Public functions ---
+    /** Launches a new asynchronous LIDAR scan batch from the owning actor transform. */
     UFUNCTION(BlueprintCallable, Category = "Lidar")
     void FireLidarScan();
 
-    // Called when all traces in a batch complete
+    /** Handles a fully resolved scan frame and forwards it into the processing pipeline. */
     void OnTraceBatchComplete(const TArray<FVector>& FramePoints);
 
-    // Tick polling for trace results
+    /** Polls in-flight async trace handles and resolves completed hit batches. */
     void ProcessPendingTraces();
 
 private:
@@ -62,5 +66,6 @@ private:
 
     TArray<FPendingTrace> PendingTraces;
 
+    /** Maps height to the configured debug gradient color. */
     FLinearColor GetColorForHeight(float Z) const;
 };

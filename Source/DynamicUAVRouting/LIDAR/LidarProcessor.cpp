@@ -1,10 +1,13 @@
 #include "LidarProcessor.h"
 #include "LidarSmoothingTask.h"
 #include "Async/Async.h"
-#include "NiagaraFunctionLibrary.h"
 #include "NiagaraDataInterfaceArrayFunctionLibrary.h"
+#include "Logging/LogMacros.h"
 #include "NavigationSystem.h"
 
+DEFINE_LOG_CATEGORY_STATIC(LogLidarProcessor, Log, All);
+
+/** Establishes default mesh and gradient settings for runtime LIDAR processing. */
 ALidarProcessor::ALidarProcessor()
 {
     PrimaryActorTick.bCanEverTick = false;
@@ -18,32 +21,69 @@ ALidarProcessor::ALidarProcessor()
 
 }
 
+/** Creates the runtime Niagara instance and initializes the procedural heightfield grid. */
 void ALidarProcessor::BeginPlay()
 {
     Super::BeginPlay();
 
+    if (!NiagaraSystemAsset)
+    {
+        UE_LOG(LogLidarProcessor, Warning, TEXT("LidarProcessor '%s' has no NiagaraSystemAsset assigned at BeginPlay."), *GetName());
+    }
+    else
+    {
+        UE_LOG(LogLidarProcessor, Log, TEXT("LidarProcessor '%s' BeginPlay with NiagaraSystemAsset '%s'."), *GetName(), *GetNameSafe(NiagaraSystemAsset));
+    }
+
     if (!NiagaraComp && NiagaraSystemAsset)
     {
-        NiagaraComp = UNiagaraFunctionLibrary::SpawnSystemAttached(
-            NiagaraSystemAsset,
-            RootComponent,
-            NAME_None,
-            FVector::ZeroVector,
-            FRotator::ZeroRotator,
-            EAttachLocation::KeepRelativeOffset,
-            false);
+        NiagaraComp = NewObject<UNiagaraComponent>(this, TEXT("LidarPointCloudNiagara"));
+        if (NiagaraComp)
+        {
+            AddInstanceComponent(NiagaraComp);
+            NiagaraComp->CreationMethod = EComponentCreationMethod::Instance;
+            NiagaraComp->SetAsset(NiagaraSystemAsset);
+            NiagaraComp->SetUsingAbsoluteLocation(false);
+            NiagaraComp->SetUsingAbsoluteRotation(false);
+            NiagaraComp->SetUsingAbsoluteScale(false);
+            NiagaraComp->AttachToComponent(RootComponent, FAttachmentTransformRules::KeepRelativeTransform);
+            NiagaraComp->RegisterComponent();
+            UE_LOG(LogLidarProcessor, Log, TEXT("LidarProcessor '%s' created NiagaraComp '%s' with asset '%s'."), *GetName(), *GetNameSafe(NiagaraComp), *GetNameSafe(NiagaraComp->GetAsset()));
+        }
+        else
+        {
+            UE_LOG(LogLidarProcessor, Error, TEXT("LidarProcessor '%s' failed to create NiagaraComp."), *GetName());
+        }
+    }
+    else if (NiagaraComp && NiagaraSystemAsset && NiagaraComp->GetAsset() != NiagaraSystemAsset)
+    {
+        NiagaraComp->SetAsset(NiagaraSystemAsset);
+        UE_LOG(LogLidarProcessor, Log, TEXT("LidarProcessor '%s' updated existing NiagaraComp '%s' to asset '%s'."), *GetName(), *GetNameSafe(NiagaraComp), *GetNameSafe(NiagaraComp->GetAsset()));
+    }
+
+    if (NiagaraComp)
+    {
+        NiagaraComp->SetVisibility(true, true);
+        NiagaraComp->SetHiddenInGame(false, true);
+        NiagaraComp->SetAutoActivate(true);
+        NiagaraComp->ReinitializeSystem();
+        NiagaraComp->Activate(true);
+        UE_LOG(LogLidarProcessor, Log, TEXT("LidarProcessor '%s' activated NiagaraComp '%s'. Asset after activation: '%s'."), *GetName(), *GetNameSafe(NiagaraComp), *GetNameSafe(NiagaraComp->GetAsset()));
+    }
+    else
+    {
+        UE_LOG(LogLidarProcessor, Warning, TEXT("LidarProcessor '%s' has no NiagaraComp after BeginPlay setup."), *GetName());
     }
 
     InitializeProcMeshGrid();
 }
 
+/** Allocates the local grid backing both the procedural surface and mesh-space smoothing. */
 void ALidarProcessor::InitializeProcMeshGrid()
 {
     Vertices.Empty();
     RawVerts.Empty();
     Triangles.Empty();
-    NiagaraPointPositions.Empty();
-    NiagaraPointColors.Empty();
 
     int32 NumX = FMath::CeilToInt(PlaneWidth / StepSize) + 1;
     int32 NumY = FMath::CeilToInt(PlaneLength / StepSize) + 1;
@@ -93,10 +133,12 @@ void ALidarProcessor::InitializeProcMeshGrid()
     }
 }
 
+/** Queues a new raw hit frame for immediate visualization and deferred terrain integration. */
 void ALidarProcessor::AddPoints(const TArray<FVector>& NewPoints)
 {
     if (NewPoints.Num() == 0) return;
 
+    UpdateNiagaraPointCloud(NewPoints);
     BufferedPointUpdates.Append(NewPoints);
 
     if (!bSmoothingTaskRunning)
@@ -105,6 +147,7 @@ void ALidarProcessor::AddPoints(const TArray<FVector>& NewPoints)
     }
 }
 
+/** Collapses buffered updates into the latest terrain changes and dispatches async smoothing. */
 void ALidarProcessor::StartBufferedSmoothingTask()
 {
     if (BufferedPointUpdates.Num() == 0)
@@ -220,18 +263,18 @@ void ALidarProcessor::StartBufferedSmoothingTask()
         });
 }
 
+/** Commits the current vertex buffer to the procedural mesh component. */
 void ALidarProcessor::UpdateProcMeshSection()
 {
     LidarMeshComp->UpdateMeshSection(0, Vertices, {}, {}, {}, {});
 }
 
+/** Clears runtime mesh state and rebuilds the processor back to an empty baseline grid. */
 void ALidarProcessor::ClearPoints()
 {
     Vertices.Empty();
     RawVerts.Empty();
     Triangles.Empty();
-    NiagaraPointPositions.Empty();
-    NiagaraPointColors.Empty();
 
     if (LidarMeshComp)
     {
@@ -240,6 +283,7 @@ void ALidarProcessor::ClearPoints()
     }
 }
 
+/** Merges an async smoothing result into the live mesh and continues any queued work. */
 void ALidarProcessor::HandleSmoothingComplete(const TArray<FVector>& SmoothedVertices, const TArray<int32>& UpdatedVertices)
 {
     for (int32 UpdatedVertex : UpdatedVertices)
@@ -282,8 +326,6 @@ void ALidarProcessor::HandleSmoothingComplete(const TArray<FVector>& SmoothedVer
         Vertices[AffectedIndex] = SmoothedVertices[AffectedIndex];
     }
 
-    UpdateNiagaraPointCloud(AffectedVertices);
-
     UpdateProcMeshSection();
     bSmoothingTaskRunning = false;
 
@@ -293,44 +335,31 @@ void ALidarProcessor::HandleSmoothingComplete(const TArray<FVector>& SmoothedVer
     }
 }
 
-void ALidarProcessor::UpdateNiagaraPointCloud(const TSet<int32>& PointIDs)
+/** Publishes the current raw hit frame to Niagara as a local-space point cloud. */
+void ALidarProcessor::UpdateNiagaraPointCloud(const TArray<FVector>& RawWorldPoints)
 {
     if (!NiagaraComp)
     {
         return;
     }
 
-    for (int32 PointID : PointIDs)
-    {
-        if (!Vertices.IsValidIndex(PointID))
-        {
-            NiagaraPointPositions.Remove(PointID);
-            NiagaraPointColors.Remove(PointID);
-            continue;
-        }
-
-        NiagaraPointPositions.Add(PointID, Vertices[PointID]);
-        NiagaraPointColors.Add(PointID, GetColorForHeight(Vertices[PointID].Z));
-    }
-
     TArray<int32> NiagaraIDs;
-    NiagaraIDs.Reserve(NiagaraPointPositions.Num());
-    NiagaraPointPositions.GetKeys(NiagaraIDs);
-    NiagaraIDs.Sort();
+    NiagaraIDs.Reserve(RawWorldPoints.Num());
 
     TArray<FVector> PointPositions;
-    PointPositions.Reserve(NiagaraIDs.Num());
+    PointPositions.Reserve(RawWorldPoints.Num());
 
     TArray<FLinearColor> PointColors;
-    PointColors.Reserve(NiagaraIDs.Num());
+    PointColors.Reserve(RawWorldPoints.Num());
 
-    for (int32 NiagaraID : NiagaraIDs)
+    const FTransform MeshTransform = LidarMeshComp ? LidarMeshComp->GetComponentTransform() : FTransform::Identity;
+
+    for (int32 PointIndex = 0; PointIndex < RawWorldPoints.Num(); ++PointIndex)
     {
-        if (const FVector* Position = NiagaraPointPositions.Find(NiagaraID))
-        {
-            PointPositions.Add(*Position);
-            PointColors.Add(NiagaraPointColors.FindRef(NiagaraID));
-        }
+        const FVector& WorldPoint = RawWorldPoints[PointIndex];
+        NiagaraIDs.Add(PointIndex);
+        PointPositions.Add(MeshTransform.InverseTransformPosition(WorldPoint));
+        PointColors.Add(GetColorForHeight(WorldPoint.Z));
     }
 
     UNiagaraDataInterfaceArrayFunctionLibrary::SetNiagaraArrayInt32(
@@ -346,8 +375,24 @@ void ALidarProcessor::UpdateNiagaraPointCloud(const TSet<int32>& PointIDs)
         TEXT("PointColors"),
         PointColors);
     NiagaraComp->SetVariableInt(TEXT("PointCount"), NiagaraIDs.Num());
+
+    if (!bHasDeferredNiagaraReinit && RawWorldPoints.Num() > 0 && GetWorld())
+    {
+        bHasDeferredNiagaraReinit = true;
+        GetWorld()->GetTimerManager().SetTimerForNextTick(FTimerDelegate::CreateWeakLambda(
+            this,
+            [this]()
+            {
+                if (NiagaraComp)
+                {
+                    NiagaraComp->ReinitializeSystem();
+                    NiagaraComp->Activate(true);
+                }
+            }));
+    }
 }
 
+/** Evaluates the configured visualization gradient for a given world-space height. */
 FLinearColor ALidarProcessor::GetColorForHeight(float Z) const
 {
     const int32 NumStops = FMath::Min(GradientColors.Num(), GradientHeights.Num());

@@ -4,10 +4,7 @@
 #include "ProceduralMeshComponent.h"
 #include "LidarMeshComponent.generated.h"
 
-/**
- * Custom procedural mesh component for LIDAR meshes.
- * Automatically supports collision + navigation updates.
- */
+/** Procedural mesh component used as the runtime terrain surface for processed LIDAR data. */
 UCLASS(ClassGroup = (Custom), meta = (BlueprintSpawnableComponent))
 class DYNAMICUAVROUTING_API ULidarMeshComponent : public UProceduralMeshComponent
 {
@@ -16,7 +13,7 @@ class DYNAMICUAVROUTING_API ULidarMeshComponent : public UProceduralMeshComponen
 public:
     ULidarMeshComponent(const FObjectInitializer& ObjectInitializer);
 
-    /** Rebuild physics state & force nav update */
+    /** Rebuilds mesh collision and requests a navigation refresh for the updated surface. */
     UFUNCTION(BlueprintCallable, Category = "Lidar|Mesh")
     void RebuildCollisionAndNav();
 };

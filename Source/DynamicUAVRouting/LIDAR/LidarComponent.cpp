@@ -3,6 +3,7 @@
 #include "DrawDebugHelpers.h"
 #include "Engine/World.h"
 
+/** Configures default scan and debug visualization parameters. */
 ULidarComponent::ULidarComponent()
 {
     PrimaryComponentTick.bCanEverTick = true;
@@ -11,11 +12,13 @@ ULidarComponent::ULidarComponent()
     GradientColors = { FLinearColor::Blue, FLinearColor::Green, FLinearColor::Yellow, FLinearColor::Red };
 }
 
+/** Preserves the default component startup path; scan work begins on demand. */
 void ULidarComponent::BeginPlay()
 {
     Super::BeginPlay();
 }
 
+/** Services asynchronous trace batches each frame while the component is active. */
 void ULidarComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
     Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
@@ -23,6 +26,7 @@ void ULidarComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActor
     ProcessPendingTraces();
 }
 
+/** Evaluates the configured debug gradient against a world-space height value. */
 FLinearColor ULidarComponent::GetColorForHeight(float Z) const
 {
     const int32 NumStops = FMath::Min(GradientColors.Num(), GradientHeights.Num());
@@ -43,6 +47,7 @@ FLinearColor ULidarComponent::GetColorForHeight(float Z) const
     return GradientColors[NumStops - 1];
 }
 
+/** Builds and submits a randomized downward trace batch using UE's async trace system. */
 void ULidarComponent::FireLidarScan()
 {
     UWorld* World = GetWorld();
@@ -82,6 +87,7 @@ void ULidarComponent::FireLidarScan()
     PendingTraces.Add(MoveTemp(PendingTrace));
 }
 
+/** Resolves completed async trace handles and finalizes any fully completed scan frame. */
 void ULidarComponent::ProcessPendingTraces()
 {
     UWorld* World = GetWorld();
@@ -126,6 +132,7 @@ void ULidarComponent::ProcessPendingTraces()
     }
 }
 
+/** Hands a completed raw hit frame to the processor for visualization and terrain updates. */
 void ULidarComponent::OnTraceBatchComplete(const TArray<FVector>& FramePoints)
 {
     if (FramePoints.Num() == 0)

@@ -5,10 +5,12 @@
 #include "LidarMeshComponent.h"
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
+#include "TimerManager.h"
 #include "LidarProcessor.generated.h"
 
 DECLARE_DELEGATE_TwoParams(FOnLidarSmoothingComplete, const TArray<FVector>&, const TArray<int32>&);
 
+/** Consumes LIDAR hit frames, updates the heightfield mesh, and drives point-cloud visualization. */
 UCLASS()
 class DYNAMICUAVROUTING_API ALidarProcessor : public AActor
 {
@@ -18,6 +20,7 @@ public:
     ALidarProcessor();
 
 protected:
+    /** Spawns runtime visualization dependencies and initializes the procedural grid. */
     virtual void BeginPlay() override;
 
 public:
@@ -68,30 +71,33 @@ public:
     UPROPERTY(Transient)
     TArray<int32> Triangles;
 
-    /** Initialize procedural mesh grid */
+    /** Builds the local heightfield grid used by the procedural mesh surface. */
     UFUNCTION(BlueprintCallable, Category = "Mesh")
     void InitializeProcMeshGrid();
 
-    /** Add LIDAR points (updates mesh + collision + nav) */
+    /** Buffers a raw LIDAR hit frame for visualization and deferred mesh processing. */
     UFUNCTION(BlueprintCallable, Category = "Mesh")
     void AddPoints(const TArray<FVector>& NewPoints);
 
-    /** Update procedural mesh section */
+    /** Pushes the latest vertex state into the procedural mesh component. */
     UFUNCTION(BlueprintCallable, Category = "Mesh")
     void UpdateProcMeshSection();
 
-    /** Clear mesh */
+    /** Resets the mesh and visualization state back to an empty grid. */
     UFUNCTION(BlueprintCallable, Category = "Mesh")
     void ClearPoints();
 
 private:
+    /** Applies the result of an asynchronous smoothing pass back onto the live mesh state. */
     void HandleSmoothingComplete(const TArray<FVector>& SmoothedVertices, const TArray<int32>& UpdatedVertices);
+    /** Starts the next asynchronous smoothing job from the buffered raw point queue. */
     void StartBufferedSmoothingTask();
-    void UpdateNiagaraPointCloud(const TSet<int32>& PointIDs);
+    /** Uploads the latest raw hit frame to Niagara as a point-cloud visualization buffer. */
+    void UpdateNiagaraPointCloud(const TArray<FVector>& RawWorldPoints);
+    /** Maps a height value into the configured point-cloud color gradient. */
     FLinearColor GetColorForHeight(float Z) const;
 
     TArray<FVector> BufferedPointUpdates;
     bool bSmoothingTaskRunning = false;
-    TMap<int32, FVector> NiagaraPointPositions;
-    TMap<int32, FLinearColor> NiagaraPointColors;
+    bool bHasDeferredNiagaraReinit = false;
 };

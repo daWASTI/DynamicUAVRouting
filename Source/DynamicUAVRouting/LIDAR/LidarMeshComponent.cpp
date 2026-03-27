@@ -1,6 +1,7 @@
 #include "LidarMeshComponent.h"
 #include "NavigationSystem.h"
 
+/** Configures collision and navigation behavior for the generated LIDAR terrain mesh. */
 ULidarMeshComponent::ULidarMeshComponent(const FObjectInitializer& ObjectInitializer)
     : Super(ObjectInitializer)
 {
@@ -17,6 +18,7 @@ ULidarMeshComponent::ULidarMeshComponent(const FObjectInitializer& ObjectInitial
     SetCanEverAffectNavigation(true);
 }
 
+/** Forces dependent physics and navigation systems to acknowledge the current mesh shape. */
 void ULidarMeshComponent::RebuildCollisionAndNav()
 {
     // Force physics/collision rebuild

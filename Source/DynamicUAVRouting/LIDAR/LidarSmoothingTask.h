@@ -2,10 +2,7 @@
 #include "CoreMinimal.h"
 #include "Async/AsyncWork.h"
 
-/**
- * FAsyncTask-compatible Lidar smoothing task
- * Runs on a background thread to smooth point cloud Z-values
- */
+/** Background task that smooths affected regions of the local LIDAR heightfield. */
 class FLidarSmoothingTask : public FNonAbandonableTask
 {
 public:
@@ -38,7 +35,7 @@ public:
         OutputVertices = BaseVertices;
     }
 
-    // Main work function, runs on worker thread
+    /** Executes the smoothing pass over the affected vertex neighborhood on a worker thread. */
     void DoWork()
     {
         if (BaseVertices.Num() == 0 || RawInputPoints.Num() == 0 || UpdatedVertices.Num() == 0) return;
@@ -99,7 +96,7 @@ public:
         }
     }
 
-    // Required by FAsyncTask
+    /** Provides Unreal's stat system metadata for this async task type. */
     FORCEINLINE TStatId GetStatId() const
     {
         RETURN_QUICK_DECLARE_CYCLE_STAT(FLidarSmoothingTask, STATGROUP_ThreadPoolAsyncTasks);
