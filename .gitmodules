@@ -1,0 +1,3 @@
+[submodule "Plugins/LockstepPlugin"]
+	path = Plugins/LockstepPlugin
+	url = E:/LockstepPlugin
