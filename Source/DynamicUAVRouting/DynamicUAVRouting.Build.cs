@@ -22,7 +22,10 @@ public class DynamicUAVRouting : ModuleRules
 			"RealtimeMeshComponent",
             "Niagara",
 			"PCG",
-            "NavigationSystem"
+            "NavigationSystem",
+			"LockstepPlugin",
+			"CloudSimPlugin",
+			"RuntimeVDB"
         });
 
 		PublicIncludePaths.AddRange(new string[] {
