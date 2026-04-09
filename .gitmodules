@@ -1,3 +1,9 @@
 [submodule "Plugins/LockstepPlugin"]
 	path = Plugins/LockstepPlugin
 	url = https://github.com/daWASTI/LockstepPlugin.git
+[submodule "Plugins/RuntimeVDB"]
+	path = Plugins/RuntimeVDB
+	url = git@github.com:daWASTI/RuntimeVDB.git
+[submodule "Plugins/CloudSimPlugin"]
+	path = Plugins/CloudSimPlugin
+	url = git@github.com:daWASTI/CloudSimPlugin.git
