@@ -7,3 +7,6 @@
 [submodule "Plugins/CloudSimPlugin"]
 	path = Plugins/CloudSimPlugin
 	url = git@github.com:daWASTI/CloudSimPlugin.git
+[submodule "Plugins/ROS2UE5"]
+	path = Plugins/ROS2UE5
+	url = https://github.com/daWASTI/ROS2UE5
